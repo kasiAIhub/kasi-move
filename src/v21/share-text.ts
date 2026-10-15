@@ -9,7 +9,7 @@ export function stallShareMessage(stall: ShareStall, origin: string) {
   const name = stall.name.trim() || 'Our stall', until = closingTime(stall.hours), driver = stall.deliveryName?.trim();
   const lines = ['🎉 *' + name + ' just opened!* 🎉', 'Fresh food, made for you. Order online, no queue.'];
   if (until) lines.push('🕚 The kitchen is now open until ' + until + '.');
-  if (stall.delivery && driver) lines.push('🛵 ' + driver + ' will be delivering to your gate' + (stall.takesCard ? ' - tell us if you need him to bring a speed point.' : '.'));
+  if (stall.delivery && driver) lines.push('🛵 ' + driver + ' will be delivering to your gate' + (stall.takesCard ? ' - tell us if you need them to bring a speed point.' : '.'));
   lines.push((stall.delivery && driver ? '🏪 Or order and collect from the stall.' : '🏪 Order and collect from the stall.') + (stall.takesCard ? '' : ' Cash only.'));
   lines.push('👉 ' + origin + '/stall/' + stall.id);
   return lines.join('\n');

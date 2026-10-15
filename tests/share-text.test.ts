@@ -5,7 +5,7 @@ describe('share text', () => {
   it('builds the approved message with driver, hours and speed point', () => {
     expect(stallShareMessage(base, 'https://x.test')).toBe([
       '🎉 *Mama T Kota just opened!* 🎉', 'Fresh food, made for you. Order online, no queue.', '🕚 The kitchen is now open until 23:00.',
-      '🛵 Tsepo will be delivering to your gate - tell us if you need him to bring a speed point.', '🏪 Or order and collect from the stall.', '👉 https://x.test/stall/abc'].join('\n'));
+      '🛵 Tsepo will be delivering to your gate - tell us if you need them to bring a speed point.', '🏪 Or order and collect from the stall.', '👉 https://x.test/stall/abc'].join('\n'));
   });
   it('leaves out the driver line when no driver accepted, and the speed point when cash only', () => {
     const text = stallShareMessage({ ...base, delivery: false, deliveryName: undefined, takesCard: false }, 'https://x.test');
