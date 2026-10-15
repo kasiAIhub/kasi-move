@@ -90,7 +90,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
   }
   // Every new stall starts with the six standard kota names, unpriced and without pictures: the vendor prices, renames or removes them and adds their own.
   const starterMenu=(ownerId:string,shopName:string,demoPhotos=false)=>originalKotas.map(([key, name]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)')
-    .bind(`${ownerId}-${key}`, ownerId, JSON.stringify({ id: `${ownerId}-${key}`, name, priceCents: null, shop: 'stall', shopName, enabled: true, ...(demoPhotos?{image:`/images/demo/${key}.jpg`}:{}), extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] })));
+    .bind(`${ownerId}-${key}`, ownerId, JSON.stringify({ id: `${ownerId}-${key}`, name, priceCents: null, shop: 'stall', shopName, enabled: true, ...(demoPhotos?{image:`/images/demo/${key}-2.jpg`}:{}), extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] })));
   async function resetDemoStall(){
     const target=await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(DEMO_PHONE).first<{id:string}>();
     if(!target)return;

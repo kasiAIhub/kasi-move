@@ -650,7 +650,7 @@ describe('v2.1 shared server foundation', () => {
     expect(demo.status).toBe(200);
     const menu = (await call('/vendor/stall', 'GET', undefined, demo.cookie)).body.menu;
     expect(menu).toHaveLength(6);
-    expect(menu.every((i: any) => /^\/images\/demo\/[a-z-]+\.jpg$/.test(i.image))).toBe(true);
+    expect(menu.every((i: any) => /^\/images\/demo\/[a-z0-9-]+\.jpg$/.test(i.image))).toBe(true);
     const real = await vendor('0812345678');
     expect((await call('/vendor/stall', 'GET', undefined, real.cookie)).body.menu.every((i: any) => !i.image)).toBe(true);
   });
