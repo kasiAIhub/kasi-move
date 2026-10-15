@@ -19,7 +19,7 @@ export const day = (time: number) => new Date(time + 7200000).toISOString().slic
 export const wa = (phone: string, message = '') => `https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`;
 export const settingsOf = (stall: StallRow): StallSettings => JSON.parse(stall.settings || '{}');
 export interface OwnerData { team?: import('./team').TeamMember[]; stall: StallRow; menu: GateItem[]; riderOffer?: {name?:string;phone:string;fee_cents:number;decision:string|null;expires_at:number}|null }
-export interface PublicStall { id: string; name: string; phone: string; hours: string; open: boolean; takesCard: boolean; delivery: boolean; alcoholTesting?: boolean; kotaDisplay?: GateItem[]; nextDoorDisplay?: GateItem[]; menu: GateItem[] }
+export interface PublicStall { special?: { text: string; from: number; to: number } | null; id: string; name: string; phone: string; hours: string; open: boolean; takesCard: boolean; delivery: boolean; alcoholTesting?: boolean; kotaDisplay?: GateItem[]; nextDoorDisplay?: GateItem[]; menu: GateItem[] }
 interface Session { role: 'vendor' | 'customer' | 'rider' | 'assistant'; stallId: string | null; ownerAvailable?: boolean; ownerStallId?: string; ownerSetupComplete?: boolean; demo?: boolean }
 const resourceSeeds = new Map<string, unknown>();
 interface Identity { acceptVendor: (owner: OwnerData) => void; session: Session | null; loading: boolean; refresh: () => Promise<void> }

@@ -45,6 +45,17 @@ describe('public directory', () => {
     expect(stallLdTag(list[0], origin)).toContain('"priceCurrency":"ZAR"');
     expect(robotsTxt(origin)).toContain('Sitemap: ' + origin + '/sitemap.xml');
   });
+  it('shows a special only inside its window', async () => {
+    const { s, db, stall, item } = setup();
+    stall('a', '+27811111111', 'Mama Fish', 'Mamelodi'); item('a1', 'a', {});
+    const set = (sp: object) => s.prepare("UPDATE stalls SET settings=json_patch(settings,?) WHERE id='a'").run(JSON.stringify({ special: sp }));
+    set({ text: 'Friday kota R25', from: NOW - 1000, to: NOW + 1000 });
+    expect((await listedStalls(db, NOW))[0].special?.text).toBe('Friday kota R25');
+    expect(directoryHtml(await listedStalls(db, NOW), 'https://m')).toContain('Friday kota R25');
+    expect((await listedStalls(db, NOW + 2000))[0].special).toBeNull();
+    set({ text: 'Later', from: NOW + 5000, to: NOW + 9000 });
+    expect((await listedStalls(db, NOW))[0].special).toBeNull();
+  });
   it('escapes vendor text', async () => {
     const { db, stall, item } = setup();
     stall('x', '+27877777777', '<script>alert(1)</script>', 'Town'); item('x1', 'x', {});

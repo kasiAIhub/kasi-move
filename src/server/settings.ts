@@ -14,4 +14,5 @@ export interface StallSettings {
   billing?: { paidThrough: number; payments: { at: number; amountCents: number; reference: string }[] };
   neighbours?: ShopSetting[];
   done?: string[];
+  special?: { text: string; from: number; to: number };
 }

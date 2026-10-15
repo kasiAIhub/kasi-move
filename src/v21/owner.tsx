@@ -195,6 +195,7 @@ export function More() {
   const data = resource.data;
   return <Frame vendor name={data.stall.name} open={Boolean(data.stall.is_open)}><h1>More</h1><ErrorText text={task.error} />{message && <p role="status">{message}</p>}{inviteLink && <a className="v-button" href={inviteLink} target="_blank" rel="noreferrer">Send delivery invitation on WhatsApp</a>}
     <details className="v-card" id="hours" open={window.location.hash === '#hours'}><summary>My stall</summary><form className="v-stack" onSubmit={event => { event.preventDefault(); void task.run(async () => { await api('/vendor/stall', 'PUT', { name, town: data.stall.town, hours, open: Boolean(data.stall.is_open), takesCard }); await resource.reload(); }); }}><label>Stall name<input required value={name} onChange={event => setName(event.target.value)} /></label><label>Operating hours<input required value={hours} onChange={event => setHours(event.target.value)} /></label><label className="v-choice"><input type="checkbox" checked={takesCard} onChange={event => setTakesCard(event.target.checked)} />I accept card payments at the gate</label><button className="v-button" disabled={task.busy}>Save</button></form></details>
+    <details className="v-card" id="special" open={window.location.hash === '#special'}><summary>Today’s special{settingsOf(data.stall).special&&settingsOf(data.stall).special!.to>Date.now()?' · on':''}</summary><SpecialForm data={data} reload={resource.reload}/></details>
     <details className="v-card" id="rider" open={window.location.hash === '#rider'}><summary>Delivery team</summary><form className="v-stack" onSubmit={event=>{event.preventDefault();void task.run(async()=>{await api('/vendor/settings','PUT',{deliveryEnabled:offerDelivery});await resource.reload();setMessage('Customer delivery options saved.');});}}><label className="v-choice"><input type="checkbox" checked={offerDelivery} onChange={event=>setOfferDelivery(event.target.checked)}/>Offer collection and delivery</label><p>{offerDelivery?(data.stall.rider_phone?'Customers can choose collection or delivery.':'Invite your first driver below. Delivery opens after they accept; customers can collect in the meantime.'):'Customers can collect from your stall.'}</p><button className="v-button secondary" disabled={task.busy}>Save delivery options</button></form><TeamManager role="rider" embedded/></details>
     <Link className="v-card v-block" to="/owner/assistants">Shop assistants</Link>
     <Link className="v-card v-block" to="/owner/next-door">Next door</Link><Link className="v-card v-block" to="/owner/keep">Keep my stall</Link>
@@ -231,4 +232,19 @@ export function KeepStall() {
       <p>For customers ordering from your own stall:</p><StallShare stall={{id:data.stallId,name:data.stallName,takesCard:data.takesCard,delivery:data.delivery,deliveryName:data.deliveryName}}/>
     </section>
   </Frame>;
+}
+
+const localInput=(time:number)=>{const d=new Date(time-new Date(time).getTimezoneOffset()*60000);return d.toISOString().slice(0,16);};
+function SpecialForm({data,reload}:{data:OwnerData;reload:()=>Promise<unknown>|void}){
+  const current=settingsOf(data.stall).special,live=current&&current.to>Date.now()?current:undefined,task=useTask();
+  const [text,setText]=useState(live?.text??''),[from,setFrom]=useState(localInput(live?.from??Date.now())),[to,setTo]=useState(localInput(live?.to??Date.now()+5*3600000)),[note,setNote]=useState('');
+  return <form className="v-stack" onSubmit={event=>{event.preventDefault();void task.run(async()=>{await api('/vendor/settings','PUT',{special:{text,from:new Date(from).getTime(),to:new Date(to).getTime()}});await reload();setNote('Special saved. It shows on your menu between these times and switches off by itself.');});}}>
+    <ErrorText text={task.error}/>{note&&<p role="status">{note}</p>}
+    <label className="v-stack">One line for customers<input maxLength={80} required value={text} placeholder="Friday kota special: R25" onChange={event=>setText(event.target.value)}/></label>
+    <label className="v-stack">From<input type="datetime-local" required value={from} onChange={event=>setFrom(event.target.value)}/></label>
+    <label className="v-stack">Until<input type="datetime-local" required value={to} onChange={event=>setTo(event.target.value)}/></label>
+    <p>It shows at the top of your menu and in the directory only between these times, then it goes away by itself.</p>
+    <button className="v-button" disabled={task.busy}>Save special</button>
+    {live&&<button type="button" className="v-button secondary" disabled={task.busy} onClick={()=>void task.run(async()=>{await api('/vendor/settings','PUT',{special:null});setText('');await reload();setNote('Special removed.');})}>Remove special now</button>}
+  </form>;
 }

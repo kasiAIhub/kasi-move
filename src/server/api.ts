@@ -52,6 +52,7 @@ function checkedExtras(value: unknown): NonNullable<GateItem['extras']> {
   return value.map(row=>{if(!row||typeof row!=='object')fail(400,'Check your extras.');const id=text(row.id);if(ids.has(id))fail(400,'Choose each extra once.');ids.add(id);return {id,name:text(row.name),priceCents:cents(row.priceCents)};});
 }
 function editableSettings(settings: StallSettings) { const patch={...settings}; delete patch.billing; delete patch.riderFeeCents; return JSON.stringify(patch); }
+function activeSpecial(settings: StallSettings, now: number) { const s = settings.special; return s && s.from <= now && now < s.to ? { text: s.text, from: s.from, to: s.to } : null; }
 function accepting(stall: StallRow, now: number) {
   const settings: StallSettings = JSON.parse(stall.settings);
   const open = settings.overrideUntil && now < settings.overrideUntil ? settings.overrideOpen : scheduleOpen(stall.hours, now);
@@ -461,7 +462,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         const record = await stall(publicMatch[1]);
         const items = await menu(record.id);
         return json({ id: record.id, name: record.name, phone: record.phone, hours: record.hours, alcoholTesting: false,
-          open: accepting(record, now()), takesCard: Boolean(record.takes_card), delivery: Boolean(record.rider_phone) && JSON.parse(record.settings).deliveryEnabled!==false,
+          open: accepting(record, now()), special: activeSpecial(JSON.parse(record.settings), now()), takesCard: Boolean(record.takes_card), delivery: Boolean(record.rider_phone) && JSON.parse(record.settings).deliveryEnabled!==false,
           menu: items.filter(item => available(item, record)),
           nextDoorDisplay: items.filter(item => item.shop !== 'stall' && available({ ...item, soldOutDate: undefined }, record)),
           kotaDisplay: items.filter(item => item.shop === 'stall' && item.enabled),
@@ -657,6 +658,15 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             settings.setupStep = Number(input.setupStep);
           }
           if(typeof input.deliveryEnabled==='boolean')settings.deliveryEnabled=input.deliveryEnabled;
+          if(input.special===null)delete settings.special;
+          else if(input.special!==undefined){
+            const special=input.special as {text?:unknown;from?:unknown;to?:unknown};
+            if(!special||typeof special.text!=='string'||!special.text.trim()||special.text.trim().length>80)fail(400,'Write the special in one short line.');
+            if(!Number.isSafeInteger(special.from)||!Number.isSafeInteger(special.to)||(special.to as number)<=(special.from as number))fail(400,'The end time must be after the start time.');
+            if((special.to as number)<=now())fail(400,'The end time has already passed.');
+            if((special.to as number)-(special.from as number)>31*86400000)fail(400,'A special can run for up to 31 days.');
+            settings.special={text:special.text.trim(),from:special.from as number,to:special.to as number};
+          }
           if (typeof input.photosSkipped === 'boolean') settings.photosSkipped = input.photosSkipped;
           if (typeof input.hoursPreset === 'string') settings.hoursPreset = text(input.hoursPreset);
           if (typeof input.riderName === 'string') settings.riderName = input.riderName.slice(0, 100).trim();
