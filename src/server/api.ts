@@ -275,6 +275,12 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           ]);
           return json({ cleared: true, phone: number });
         }
+        if (path === '/admin/codes/clear' && request.method === 'POST') {
+          const input = await body(request);
+          if (input.all === 'stale') return json({ cleared: (await db.prepare('DELETE FROM login_codes WHERE expires_at<=?').bind(now()).run()).meta.changes });
+          const number = phone(input.phone);
+          return json({ cleared: (await db.prepare('DELETE FROM login_codes WHERE phone=?').bind(number).run()).meta.changes });
+        }
         if (path === '/admin/code' && request.method === 'POST') {
           const input = await body(request), number = phone(input.phone);
           if (number===DEMO_PHONE) fail(409,'The demo stall uses its fixed demo code.');

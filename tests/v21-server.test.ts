@@ -668,4 +668,19 @@ describe('v2.1 shared server foundation', () => {
     expect((await call('/auth/verify','POST',{phone:'0815550177',code:'8492'})).status).toBe(200);expect(stalls()).toBe(before+1);
     expect((await call('/auth/verify','POST',{phone:'0815550177',code:'8492',existing:true})).status).toBe(200);
   });
+  it('lets admin dismiss one login request or clear every waiting and expired one, never a live code',async()=>{
+    const key='clear-test-admin-key-not-used-in-production-1';
+    api=createApi(db,provider,()=>time,{activationKey:key,manualCodes:true});
+    for(const n of ['0815550201','0815550202','0815550203'])await call('/auth/code','POST',{phone:n});
+    const admin=await call('/admin/login','POST',{key});
+    await call('/admin/code','POST',{phone:'0815550203'},admin.cookie);
+    const count=async()=>(await call('/admin','GET',undefined,admin.cookie)).body.codes.length;
+    expect(await count()).toBe(3);
+    expect((await call('/admin/codes/clear','POST',{phone:'0815550201'},admin.cookie)).body.cleared).toBe(1);
+    expect(await count()).toBe(2);
+    expect((await call('/admin/codes/clear','POST',{all:'stale'},admin.cookie)).body.cleared).toBe(1);
+    const left=(await call('/admin','GET',undefined,admin.cookie)).body.codes;
+    expect(left).toHaveLength(1);expect(left[0].phone).toBe('+27815550203');expect(left[0].code).toBeTruthy();
+    expect((await call('/admin/codes/clear','POST',{all:'stale'},'')).status).toBe(401);
+  });
 });
