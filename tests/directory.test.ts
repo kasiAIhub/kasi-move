@@ -21,7 +21,7 @@ function setup() {
   const db = new Sqlite(s);
   const stall = (id: string, phone: string, name: string, town: string, o: { step?: number; activated?: number | null; paid?: number; rider?: string } = {}) =>
     s.prepare('INSERT INTO stalls(id,phone,name,town,hours,is_open,activated_at,rider_phone,settings) VALUES (?,?,?,?,?,?,?,?,?)').run(id, phone, name, town, '08:00–21:00', 1, o.activated === undefined ? NOW - 1000 : o.activated, o.rider ?? null, JSON.stringify({ setupStep: o.step ?? 9, billing: { paidThrough: o.paid ?? NOW + 86400000, payments: [] } }));
-  const item = (id: string, stallId: string, extra: object) => s.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)').run(id, stallId, JSON.stringify({ id, name: 'Fish and chips', priceCents: 4000, shop: 'stall', shopName: 'Stall', enabled: true, ...extra }));
+  const item = (id: string, stallId: string, extra: object) => s.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)').run(id, stallId, JSON.stringify({ id, name: 'Fish and chips', priceCents: 4000, shop: 'stall', shopName: 'Stall', enabled: true, image: '/photos/own.jpg', ...extra }));
   return { s, db, stall, item };
 }
 describe('public directory', () => {
@@ -32,15 +32,17 @@ describe('public directory', () => {
     stall('c', '+27833333333', 'Unpaid', 'Soweto', { activated: null }); item('c1', 'c', {});
     stall('d', '+27844444444', 'Lapsed', 'Soweto', { paid: NOW - 1 }); item('d1', 'd', {});
     stall('e', '+27855555555', 'No menu', 'Soweto');
+    stall('h', '+27877777777', 'No photos', 'Soweto'); item('h1', 'h', {}); item('h2', 'h', { name: 'Chips', image: undefined });
     stall('f', DEMO_PHONE, 'Demo Stall', 'Mamelodi'); item('f1', 'f', {});
     stall('g', '+27866666666', 'Neighbour only', 'Soweto'); item('g1', 'g', { shop: 'spaza' });
     const list = await listedStalls(db, NOW);
-    expect(list.map(x => x.id)).toEqual(['a']);
+    // Payment does not gate listing: unpaid and lapsed stalls with photos are still listed. Stalls without photos are not.
+    expect(list.map(x => x.id).sort()).toEqual(['a', 'c', 'd']);
     expect(list[0].items).toEqual([{ name: 'Fish and chips', priceCents: 4000 }]);
     const origin = 'https://move.kasiaihub.com';
     const all = JSON.stringify(directoryJson(list, origin)) + directoryHtml(list, origin) + sitemapXml(list, origin) + stallLdTag(list[0], origin);
     expect(all).not.toContain('27811111111'); expect(all).not.toContain('Castle'); expect(all).not.toContain('Demo');
-    expect(directoryJson(list, origin, 'soweto').stalls).toHaveLength(0);
+    expect(directoryJson(list, origin, 'soweto').stalls).toHaveLength(2);
     expect(directoryJson(list, origin, 'mamelodi').stalls[0].url).toBe(origin + '/stall/a');
     expect(stallLdTag(list[0], origin)).toContain('"priceCurrency":"ZAR"');
     expect(robotsTxt(origin)).toContain('Sitemap: ' + origin + '/sitemap.xml');

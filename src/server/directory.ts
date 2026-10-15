@@ -3,14 +3,14 @@ import type { GateItem } from './contracts';
 import type { StallSettings } from './settings';
 import { DEMO_PHONE } from './demo';
 import { isAlcoholName } from './next-door';
-import { stallPlan } from './plan';
+import { hasFoodPhotos } from './plan';
 
 /** Public directory: read-only view over stalls and menu. Lists only stalls that are actually trading. */
 export interface DirectoryItem { name: string; priceCents: number }
 export interface DirectoryStall { id: string; name: string; town: string; hours: string; takesCard: boolean; delivery: boolean; items: DirectoryItem[]; special: { text: string; to: number } | null }
 
 export async function listedStalls(db: Database, now: number, onlyId?: string): Promise<DirectoryStall[]> {
-  const base = "SELECT * FROM stalls WHERE phone<>? AND activated_at IS NOT NULL AND name<>'' AND town<>''";
+  const base = "SELECT * FROM stalls WHERE phone<>? AND name<>'' AND town<>''";
   const rows = (onlyId
     ? await db.prepare(base + ' AND id=?').bind(DEMO_PHONE, onlyId).all<StallRow>()
     : await db.prepare(base + ' ORDER BY town COLLATE NOCASE, name COLLATE NOCASE').bind(DEMO_PHONE).all<StallRow>()).results;
@@ -18,21 +18,21 @@ export async function listedStalls(db: Database, now: number, onlyId?: string): 
   for (const row of rows) {
     let settings: StallSettings;
     try { settings = JSON.parse(row.settings); } catch { continue; }
-    if ((settings.setupStep ?? 0) >= 9 && stallPlan(row, now).active) candidates.push({ row, settings });
+    if ((settings.setupStep ?? 0) >= 9) candidates.push({ row, settings });
   }
   if (!candidates.length) return [];
   // One menu query for all candidates, not one per stall: each database round trip is slow from South Africa.
-  const menus = new Map<string, DirectoryItem[]>();
+  const menus = new Map<string, DirectoryItem[]>(), photoItems = new Map<string, { shop: string; enabled: boolean; image?: string }[]>();
   const ids = candidates.map(c => c.row.id);
   for (let i = 0; i < ids.length; i += 50) {
     const chunk = ids.slice(i, i + 50);
     const found = (await db.prepare(`SELECT stall_id, body FROM menu WHERE stall_id IN (${chunk.map(() => '?').join(',')}) ORDER BY rowid`).bind(...chunk).all<{ stall_id: string; body: string }>()).results;
-    for (const row of found) { const item = directoryItem(row.body); if (item) (menus.get(row.stall_id) ?? menus.set(row.stall_id, []).get(row.stall_id)!).push(item); }
+    for (const row of found) { try { const raw = JSON.parse(row.body); (photoItems.get(row.stall_id) ?? photoItems.set(row.stall_id, []).get(row.stall_id)!).push({ shop: raw.shop, enabled: raw.enabled, image: raw.image }); } catch { /* skip unreadable row */ } const item = directoryItem(row.body); if (item) (menus.get(row.stall_id) ?? menus.set(row.stall_id, []).get(row.stall_id)!).push(item); }
   }
   const out: DirectoryStall[] = [];
   for (const { row, settings } of candidates) {
     const items = menus.get(row.id) ?? [];
-    if (!items.length) continue;
+    if (!items.length || !hasFoodPhotos(photoItems.get(row.id) ?? [])) continue;
     out.push({ id: row.id, name: row.name, town: row.town, hours: row.hours, takesCard: Boolean(row.takes_card), delivery: Boolean(row.rider_phone) && settings.deliveryEnabled !== false, items, special: settings.special && settings.special.from <= now && now < settings.special.to ? { text: settings.special.text, to: settings.special.to } : null });
   }
   return out;

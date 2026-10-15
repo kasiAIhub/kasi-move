@@ -20,3 +20,11 @@ export function stallPlan(stall: StallRow, now: number) {
     amountDueCents: stall.activated_at === null ? ONBOARDING_CENTS : active ? 0 : MONTHLY_CENTS,
     active, payments: settings.billing?.payments ?? [] };
 }
+
+export const PHOTO_GATE_MESSAGE = "You can't launch the stall without photos. Your food photos are still outstanding.";
+export const PAYMENT_PROMPT = 'Your stall is live. Make a payment to open.';
+/** A stall is live only when every food item on its menu has the vendor's own photo. */
+export function hasFoodPhotos(items: { shop: string; enabled: boolean; image?: string | null }[]) {
+  const food = items.filter(item => item.shop === 'stall' && item.enabled);
+  return food.length > 0 && food.every(item => Boolean(item.image));
+}

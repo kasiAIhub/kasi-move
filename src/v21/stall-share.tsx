@@ -13,7 +13,7 @@ function wrap(context: CanvasRenderingContext2D, text: string, y: number, size =
   }
   context.fillText(line,450,y);
 }
-export function StallShare({ stall, onDone }: { stall: ShareStall; onDone?:()=>void }) {
+export function StallShare({ stall, onDone, blocked }: { stall: ShareStall; onDone?:()=>void; blocked?: string }) {
   const [open,setOpen]=useState(false),[poster,setPoster]=useState<{url:string;file:File}|null>(null),[error,setError]=useState('');
   const task=useTask(),message=stallShareMessage(stall,appOrigin()),link=appOrigin()+'/stall/'+stall.id;
   useEffect(()=>{
@@ -36,6 +36,7 @@ export function StallShare({ stall, onDone }: { stall: ShareStall; onDone?:()=>v
     })().catch(error=>{if(active)setError(error.message);});
     return ()=>{active=false;if(objectUrl)URL.revokeObjectURL(objectUrl);};
   },[open,link,stall.name,stall.delivery,stall.takesCard]);
+  if(blocked)return <div className="v-stack"><button className="v-button" onClick={()=>setError(blocked)}>Share my stall on WhatsApp</button><ErrorText text={error}/></div>;
   return <div className="v-stack">
     <a className="v-button" href={wa('',message)} target="_blank" rel="noreferrer" onClick={()=>{void api('/vendor/settings','PUT',{done:['share']}).then(onDone).catch(()=>{});}}>Share my stall on WhatsApp</a>
     <details onToggle={event=>setOpen(event.currentTarget.open)}><summary>My stall QR for WhatsApp Status</summary>

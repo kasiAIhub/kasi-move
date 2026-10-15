@@ -48,6 +48,7 @@ describe('v2.1 shared server foundation', () => {
   });
   afterEach(() => { sqlite.close(); rmSync(folder, { recursive: true, force: true }); });
   async function call(path: string, method = 'GET', data?: unknown, cookie = '') {
+    if (path === '/vendor/menu' && method === 'PUT' && data && (data as any).shop === 'stall' && !(data as any).image && !(data as any).__photo) { const id = (data as any).id; const result: any = await call(path, method, { ...(data as any), image: undefined, __photo: true }, cookie); if (result.status === 200) sqlite.prepare("UPDATE menu SET body=json_set(body,'$.image','/photos/test/own.jpg') WHERE id=?").run(id); return result; }
     const response = await api(new Request(`https://kasi.test/api${path}`, {
       method, headers: { Origin: 'https://kasi.test', Cookie: cookie },
       body: data === undefined ? undefined : JSON.stringify(data),
@@ -70,6 +71,7 @@ describe('v2.1 shared server foundation', () => {
       { id: 'milk', name: 'milk 1L', priceCents: 2299, shop: 'spaza', shopName: 'Corner Spaza', alternative: { name: 'Parmalat 1L', priceCents: 2199 } },
       { id: 'drink', name: 'still water', priceCents: 3000, shop: 'spaza', shopName: 'Corner Spaza', alcohol: false },
     ]) expect((await call('/vendor/menu', 'PUT', { ...item, enabled: true }, owner.cookie)).status).toBe(200);
+    sqlite.prepare("UPDATE menu SET body=json_set(body,'$.image','/photos/test/own.jpg') WHERE stall_id=?").run(owner.id);
     expect((await call('/vendor/rider', 'POST', { phone: '0791234567', feeCents: 1000 }, owner.cookie)).status).toBe(200);
     const rider = await call('/auth/rider', 'POST', { token: inviteToken, decision: 'accept' });
     const customer = await call('/auth/customer', 'POST');
@@ -261,6 +263,17 @@ describe('v2.1 shared server foundation', () => {
     rejectCode = true;
     expect((await call('/auth/verify', 'POST', { phone: '0821234567', code: '8492' })).status).toBe(401);
   });
+  it('photo gate: no photos means not live; photos without payment means live but closed for orders', async () => {
+    const owner = await vendor();
+    await call('/vendor/stall', 'PUT', { name: 'Mamelodi Kota', town: 'Mamelodi', hours: '08:00–21:00', open: true, takesCard: false }, owner.cookie);
+    expect((await call('/stalls/' + owner.id)).status).toBe(404);
+    sqlite.prepare("UPDATE menu SET body=json_set(body,'$.image','/photos/x/own.jpg','$.priceCents',5000) WHERE stall_id=?").run(owner.id);
+    sqlite.prepare("UPDATE menu SET body=json_remove(body,'$.image') WHERE id LIKE '%chicken'").run();
+    expect((await call('/stalls/' + owner.id)).status).toBe(404);
+    sqlite.prepare("UPDATE menu SET body=json_set(body,'$.image','/photos/x/own.jpg') WHERE stall_id=?").run(owner.id);
+    const live = await call('/stalls/' + owner.id);
+    expect(live.status).toBe(200); expect(live.body.open).toBe(false);
+  });
   it('hides unpriced/sold-out menu items and restores daily availability at South African midnight', async () => {
     const { owner } = await setup();
     await call('/vendor/menu', 'PUT', { id: 'blank', name: 'Chicken', priceCents: null, shop: 'stall', shopName: 'Mamelodi', enabled: true }, owner.cookie);
@@ -439,8 +452,7 @@ describe('v2.1 shared server foundation', () => {
     const data=(await call('/vendor/stall','GET',undefined,owner.cookie)).body;
     expect(data.menu).toHaveLength(6);
     expect(data.menu.every((item:any)=>!item.image && item.priceCents===null)).toBe(true);
-    const publicData=(await call('/stalls/'+owner.id)).body;
-    expect(publicData.menu).toHaveLength(0);
+    expect((await call('/stalls/'+owner.id)).status).toBe(404);
     const item=data.menu[0]; await call('/vendor/menu','PUT',{...item,image:'/photos/'+owner.id+'/own.jpg'},owner.cookie);
     expect((await call('/vendor/stall','GET',undefined,owner.cookie)).body.menu[0].image).toBe('/photos/'+owner.id+'/own.jpg');
   });

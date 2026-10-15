@@ -15,7 +15,7 @@ import { hoursRange, nextOpen, scheduleOpen } from './hours';
 import { requestCode, makeCode, consumeCode, pendingCodes, digest } from './private-admin';
 import { isAlcoholName, productImage } from './next-door';
 import { verifyYoco } from './payments';
-import { stallPlan, nextMonth, ONBOARDING_CENTS } from './plan';
+import { stallPlan, nextMonth, ONBOARDING_CENTS, hasFoodPhotos } from './plan';
 
 interface Session { hash: string; role: 'vendor' | 'customer' | 'rider' | 'assistant'; stall_id: string | null; phone: string | null }
 interface OrderRow { id: string; stall_id: string; customer_hash: string; body: string; version: number }
@@ -479,6 +479,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
       if (publicMatch && request.method === 'GET') {
         const record = await stall(publicMatch[1]);
         const items = await menu(record.id);
+        if (!hasFoodPhotos(items)) fail(404, 'This stall is not live yet.');
         return json({ id: record.id, name: record.name, phone: record.phone, hours: record.hours, alcoholTesting: false,
           open: accepting(record, now()), special: activeSpecial(JSON.parse(record.settings), now()), takesCard: Boolean(record.takes_card), delivery: Boolean(record.rider_phone) && JSON.parse(record.settings).deliveryEnabled!==false,
           menu: items.filter(item => available(item, record)),
@@ -703,7 +704,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           return json({ settings });
         }
         if (path === '/vendor/activation' && request.method === 'GET') return json({
-          online: false, takesCard: Boolean(owner.takes_card), delivery: Boolean(owner.rider_phone) && JSON.parse(owner.settings).deliveryEnabled!==false, stallName: owner.name, hours: owner.hours, deliveryName:(await db.prepare("SELECT name FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(owner.id,owner.rider_phone).first<{name:string}>())?.name, plan: stallPlan(owner,now()), stallId: owner.id,
+          online: false, photosReady: hasFoodPhotos(await menu(owner.id)), takesCard: Boolean(owner.takes_card), delivery: Boolean(owner.rider_phone) && JSON.parse(owner.settings).deliveryEnabled!==false, stallName: owner.name, hours: owner.hours, deliveryName:(await db.prepare("SELECT name FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(owner.id,owner.rider_phone).first<{name:string}>())?.name, plan: stallPlan(owner,now()), stallId: owner.id,
           paymentUrl: null,
           instructions: options.paymentInstructions ?? null, activated: owner.activated_at !== null, reported: owner.payment_reported_at !== null,
         });
@@ -797,6 +798,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         if (input.fulfilment === 'delivery' && (!record.rider_phone || JSON.parse(record.settings).deliveryEnabled===false)) fail(409, 'This stall is collection only.');
         if (!Array.isArray(input.lines) || !input.lines.length || input.lines.length > 30) fail(400, 'Choose your order items.');
         const currentMenu = await menu(record.id), seen = new Set<string>();
+        if (!hasFoodPhotos(currentMenu)) fail(404, 'This stall is not live yet.');
         const lines: OrderLine[] = input.lines.map((choice: Record<string, unknown>) => {
           const item = currentMenu.find(item => item.id === choice.itemId);
           if (!item || !available(item, record) || item.priceCents === null) return fail(409, 'An item is no longer available.');
