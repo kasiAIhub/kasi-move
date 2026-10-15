@@ -34,7 +34,7 @@ export function Photo({ src, name, onChange }: { src?: string; name: string; onC
     const result = await api('/vendor/photo', 'POST', blob); await onChange(result.image);
   }
   return <div><button type="button" className="v-photo" disabled={task.busy} onClick={() => setChoosing(!choosing)} aria-label={`Add photo of ${name}`}>
-    {src ? <ProductImage src={src} alt={name} /> : <Camera size={30} />}<span>{task.busy ? 'Saving…' : name}</span></button>
+    {src ? <ProductImage src={src} alt={name} /> : <Camera size={30} />}{(!src||task.busy)&&<span>{task.busy ? 'Saving…' : name}</span>}</button>
     {choosing && <div className="v-row"><button type="button" className="v-link" onClick={() => input.current?.click()}>Camera</button><button type="button" className="v-link" onClick={() => gallery.current?.click()}>Gallery</button></div>}
     <input ref={input} hidden type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={event => { const file = event.target.files?.[0]; if (file) void task.run(() => upload(file)); }} />
     <input ref={gallery} hidden type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { const file = event.target.files?.[0]; if (file) void task.run(() => upload(file)); }} /><ErrorText text={task.error} /></div>;
