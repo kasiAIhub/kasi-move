@@ -1,0 +1,43 @@
+{
+  "name": "kasi-kota",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build && node scripts/build-server.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run --config vitest.server.config.ts",
+    "db:generate": "drizzle-kit generate",
+    "test:e2e": "playwright test --config playwright.v21.config.ts",
+    "check": "npm run build && npm test && npm run test:e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:transaction": "vitest run tests/v3-acceptance.test.ts tests/v3-store.test.ts",
+    "test:v3": "npm test && npm run test:e2e"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "drizzle-orm": "^0.45.1",
+    "lucide-react": "^0.468.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-router-dom": "^7.8.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.3.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.2.0",
+    "drizzle-kit": "^0.31.10",
+    "prettier": "^3.9.6",
+    "tailwindcss": "^4.1.12",
+    "typescript": "~5.9.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.0.0"
+  }
+}

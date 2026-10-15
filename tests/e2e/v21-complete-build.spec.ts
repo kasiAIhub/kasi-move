@@ -1,0 +1,62 @@
+import { test, expect, type BrowserContext } from '@playwright/test';
+import { DatabaseSync } from 'node:sqlite';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
+
+test.beforeEach(async ({page}) => { page.on('pageerror', error => console.error('Browser runtime error:', error.message)); });
+
+function fixture(setup = false) {
+  const db = new DatabaseSync(resolve('test-results/v21-browser-data/orders.sqlite'));
+  const id = randomUUID(), now = Date.now(), vendor = randomBytes(32).toString('hex'), rider = randomBytes(32).toString('hex');
+  const phone = `+27${String(Math.floor(Math.random() * 900000000 + 100000000))}`;
+  db.prepare('INSERT INTO stalls(id,phone,name,town,hours,is_open,takes_card,rider_phone,settings) VALUES (?,?,?,?,?,?,?,?,?)').run(id, phone, setup ? '' : 'Kasi Kota Mamelodi', setup ? '' : 'Mamelodi', '08:00–21:00', setup ? 0 : 1, 1, '+27791234567', JSON.stringify({ overrideOpen: true, overrideUntil: now + 86400000, setupStep: setup ? 3 : 9, neighbours: [{ type: 'spaza', name: 'Corner Spaza', phone: '+27811111111', enabled: true }] }));
+  if(!setup)db.prepare("UPDATE stalls SET activated_at=?,settings=json_set(settings,'$.billing',json(?)) WHERE id=?").run(now,JSON.stringify({paidThrough:now+31*86400000,payments:[]}),id);
+  for (const [secret, role, number] of [[vendor, 'vendor', phone], [rider, 'rider', '+27791234567']]) db.prepare('INSERT INTO sessions(hash,role,stall_id,phone,expires_at) VALUES (?,?,?,?,?)').run(createHash('sha256').update(secret).digest('hex'), role, id, number, now + 86400000);
+  const products = setup ? [
+    ['classic', 'Kasi Classic'], ['cheese-boy', 'Cheese'], ['russian', 'Russian'], ['breakfast', 'Breakfast'], ['chicken', 'Chicken'], ['beast', 'The Beast'],
+  ].map(([key, name]) => ({ id: `${id}-${key}`, name, priceCents: null, shop: 'stall', shopName: 'Stall', enabled: true, image: `/images/kota-approved-menu.png#${key}` })) : [
+    { id: `${id}-russian`, name: 'Russian Special', priceCents: 6000, shop: 'stall', shopName: 'Kasi Kota Mamelodi', enabled: true, image: '/images/kota-approved-menu.png#russian', extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }] },
+    { id: `${id}-milk`, name: 'milk 1L', priceCents: 2299, shop: 'spaza', shopName: 'Corner Spaza', enabled: true, alternative: { name: 'Parmalat 1L', priceCents: 2199 } },
+    { id: `${id}-savanna`, name: 'still water', priceCents: 3000, shop: 'spaza', shopName: 'Corner Spaza', enabled: true, alcohol: false },
+  ];
+  for (const item of products) db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)').run(item.id, id, JSON.stringify(item));
+  db.close(); return { id, vendor, rider };
+}
+async function auth(context: BrowserContext, secret: string) { await context.addCookies([{ name: 'kk_session', value: secret, url: 'http://localhost:5181', httpOnly: true, sameSite: 'Strict' }]); }
+
+import fs from 'node:fs';
+
+
+
+
+const origin='http://localhost:5181';
+const post=(context:BrowserContext,path:string,data:unknown)=>context.request.post(origin+'/api'+path,{headers:{Origin:origin},data});
+const folder=resolve('.local/complete-build-screenshots');
+test('admin Connector contacts and original-preserving photo polish work on mobile',async({browser})=>{
+ fs.mkdirSync(folder,{recursive:true});const data=fixture(),owner=await browser.newContext({baseURL:origin}),admin=await browser.newContext({baseURL:origin,viewport:{width:390,height:844}});await auth(owner,data.vendor);
+ const uploaded=await owner.request.post('/api/vendor/photo',{headers:{Origin:origin,'Content-Type':'image/jpeg'},data:fs.readFileSync('public/images/products/kota-classic.jpg')});expect(uploaded.status()).toBe(201);const original=(await uploaded.json()).image;
+ const menu=(await (await owner.request.get('/api/vendor/stall')).json()).menu;const food=menu.find((m:any)=>m.shop==='stall');expect((await owner.request.put('/api/vendor/menu',{headers:{Origin:origin},data:{...food,image:original}})).status()).toBe(200);
+ await post(admin,'/admin/login',{key:'browser-test-admin-key-never-used-in-production'});const page=await admin.newPage();await page.goto('/admin');await page.getByLabel('Referral name',{exact:true}).fill('Thembi');await page.getByLabel('WhatsApp number',{exact:true}).fill('0792222222');await page.getByLabel(/I checked this number/).check();await page.getByRole('button',{name:'Save Connector number'}).click();await expect(page.getByText('Connector number saved.')).toBeVisible();await page.getByRole('heading',{name:'Connectors',exact:true}).locator('..').screenshot({path:folder+'/07-connector-number.png'});
+ await page.getByText(/All vendors and payments/).click();const card=page.locator('.v-card').filter({has:page.locator('a[href="/stall/'+data.id+'"]')});await card.getByRole('button',{name:'Review and polish photos'}).click();await card.getByRole('button',{name:'Improve photo'}).click();await expect(page.getByRole('button',{name:'Save polished photo'})).toBeVisible();await page.getByRole('heading',{name:'Food photos',exact:true}).locator('..').screenshot({path:folder+'/08-photo-polish-preview.png'});await page.getByRole('button',{name:'Save polished photo'}).click();await expect(page.getByRole('button',{name:'Restore original'})).toBeEnabled();const current=(await (await owner.request.get('/api/vendor/stall')).json()).menu.find((m:any)=>m.id===food.id).image;expect(current).not.toBe(original);expect((await owner.request.get(original)).status()).toBe(200);await page.getByRole('button',{name:'Restore original'}).click();await expect.poll(async()=>(await (await owner.request.get('/api/vendor/stall')).json()).menu.find((m:any)=>m.id===food.id).image).toBe(original);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);const localDb=new DatabaseSync(resolve('test-results/v21-browser-data/orders.sqlite'));localDb.prepare("UPDATE stalls SET activated_at=NULL,settings=json_remove(settings,'$.billing') WHERE id=?").run(data.id);localDb.close();const plan=await owner.newPage();await plan.setViewportSize({width:390,height:844});await plan.goto('/owner/keep');await expect(plan.getByText(/Pay by EFT or cash/)).toBeVisible();await expect(plan.locator('a[href*=paystack]')).toHaveCount(0);await plan.screenshot({path:folder+'/10-manual-payment.png',fullPage:true});await owner.close();await admin.close();
+});
+test('separate phones retain correct roles and track assigned deliveries',async({browser})=>{
+ fs.mkdirSync(folder,{recursive:true});const data=fixture();
+ const owner=await browser.newContext({baseURL:origin,viewport:{width:390,height:844}});await auth(owner,data.vendor);const kitchen=await owner.newPage();
+ const invite=await post(owner,'/vendor/rider',{phone:'0791234567',name:'Themba',feeCents:1550});expect(invite.status()).toBe(200);const token=new URL((await invite.json()).link).searchParams.get('text')!.match(/token=([a-f0-9]{64})/)![1];
+ const driver=await browser.newContext({baseURL:origin,viewport:{width:390,height:844}}),d=await driver.newPage();const errors:string[]=[];d.on('pageerror',e=>errors.push(e.message));kitchen.on('pageerror',e=>errors.push(e.message));
+ await d.goto('/rider/invite?token='+token);await d.getByRole('button',{name:'Accept offer'}).click();await expect(d.getByRole('heading',{name:'You’re on the team!'})).toBeVisible();await d.screenshot({path:folder+'/01-driver-accepted.png',fullPage:true});const personal=await d.getByRole('link',{name:'Open my deliveries'}).getAttribute('href');await d.getByRole('link',{name:'Open my deliveries'}).click();await expect(d.getByRole('heading',{name:'My deliveries'})).toBeVisible();await d.reload();await expect(d.getByRole('heading',{name:'My deliveries'})).toBeVisible();
+ const fresh=await browser.newContext({baseURL:origin,viewport:{width:390,height:844}}),f=await fresh.newPage();await f.goto(personal!);await expect(f.getByRole('heading',{name:'My deliveries'})).toBeVisible();expect((await fresh.request.get('/api/vendor/stall')).status()).toBe(403);await f.screenshot({path:folder+'/02-driver-personal-screen.png',fullPage:true});
+ const ai=await post(owner,'/vendor/assistant',{phone:'0781111111',name:'Lerato'}),assistantToken=new URL((await ai.json()).link).searchParams.get('text')!.match(/token=([a-f0-9]{64})/)![1];
+ const assistant=await browser.newContext({baseURL:origin,viewport:{width:390,height:844}}),a=await assistant.newPage();await a.goto('/team/invite?token='+assistantToken);await a.getByRole('button',{name:'Accept invitation'}).click();await a.getByRole('link',{name:'Open my kitchen'}).click();await expect(a.getByRole('heading',{name:'Kitchen',exact:true})).toBeVisible();expect((await assistant.request.get('/api/vendor/stall')).status()).toBe(403);await a.screenshot({path:folder+'/03-assistant-personal-screen.png',fullPage:true});
+ await kitchen.goto('/owner/more#rider');await expect(kitchen.getByRole('heading',{name:'Themba',exact:true})).toBeVisible();await kitchen.screenshot({path:folder+'/04-resend-team-access.png',fullPage:true});
+ const customer=await browser.newContext({baseURL:origin});await post(customer,'/auth/customer',{});const placed=await post(customer,'/orders',{stallId:data.id,requestKey:randomUUID(),customerName:'Thabo',customerPhone:'0711234567',gateNote:'1142 Mamelodi West, Gate 3',fulfilment:'delivery',method:'card',lines:[{itemId:data.id+'-russian',quantity:1,extras:[]},{itemId:data.id+'-milk',quantity:1,ifMissing:'omit'}]});expect(placed.status()).toBe(201);const order=(await placed.json()).order;
+ await kitchen.goto('/kitchen');const team=await (await owner.request.get('/api/team')).json();await kitchen.getByLabel('Choose delivery person').selectOption(team.members.find((m:any)=>m.role==='rider').id);await kitchen.getByRole('button',{name:'Assign delivery',exact:true}).click();await expect(d.getByRole('button',{name:'Open order #1'})).toBeVisible();
+ await d.getByRole('button',{name:'Open order #1'}).click();await expect(kitchen.getByText('Delivery status: Viewed',{exact:true})).toBeVisible();await d.getByRole('button',{name:'Accept delivery',exact:true}).click();await expect(kitchen.getByText('Delivery status: Accepted',{exact:true})).toBeVisible();
+ await kitchen.getByRole('button',{name:'Start cooking',exact:true}).click();await kitchen.getByRole('button',{name:'Ready for delivery',exact:true}).click();await expect(d.getByText('Ready for delivery',{exact:true})).toBeVisible();
+ await kitchen.locator('input[type=file]').setInputFiles(resolve('public/images/products/kota-classic.jpg'));await expect(kitchen.getByRole('button',{name:'Share to WhatsApp'})).toBeEnabled();await kitchen.screenshot({path:folder+'/05-kitchen-status-order-photo.png',fullPage:true});
+ await kitchen.evaluate(()=>{Object.defineProperty(navigator,'canShare',{configurable:true,value:()=>true});Object.defineProperty(navigator,'share',{configurable:true,value:async(data:any)=>{(window as any).__shared={text:data.text,files:data.files.length};}});});await kitchen.getByRole('button',{name:'Share to WhatsApp'}).click();const shared=await kitchen.evaluate(()=>(window as any).__shared);expect(shared.files).toBe(1);expect(shared.text).toContain('/stall/'+data.id);expect(shared.text).not.toMatch(/Thabo|0711234567|Gate 3/);
+ await d.screenshot({path:folder+'/06-driver-stops.png',fullPage:true});await d.getByRole('button',{name:'Got it',exact:true}).first().click();await expect(d.getByRole('button',{name:'Got it',exact:true})).toHaveCount(1);await d.getByRole('button',{name:'Got it',exact:true}).click();await d.getByRole('button',{name:'On the way',exact:true}).click();await expect(kitchen.getByText('Delivery status: On the way',{exact:true})).toBeVisible();await d.getByRole('button',{name:'Delivered',exact:true}).click();await expect.poll(async()=>(await (await owner.request.get('/api/orders/'+order.id)).json()).order.state).toBe('delivered');await expect(kitchen.getByText('Delivery status: Delivered',{exact:true})).toBeVisible();await kitchen.screenshot({path:folder+'/09-kitchen-delivered.png',fullPage:true});
+ await kitchen.goto('/owner/more#rider');kitchen.once('dialog',dialog=>dialog.accept());await kitchen.getByRole('button',{name:'Remove Themba',exact:true}).click();await expect(kitchen.getByRole('heading',{name:'Themba',exact:true})).toHaveCount(0);await f.reload();await expect(f.getByRole('alert')).toContainText('no longer active');expect(errors).toEqual([]);
+ for(const c of [owner,driver,fresh,assistant,customer])await c.close();
+});

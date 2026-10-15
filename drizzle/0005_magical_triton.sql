@@ -1,0 +1,1 @@
+ALTER TABLE `stalls` ADD `referral_name` text DEFAULT '' NOT NULL;

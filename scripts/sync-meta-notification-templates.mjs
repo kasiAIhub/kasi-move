@@ -1,0 +1,10 @@
+import fs from 'node:fs';import {pathToFileURL} from 'node:url';import {resolve} from 'node:path';import {build} from 'esbuild';
+await build({entryPoints:['src/server/notifications.ts'],bundle:true,platform:'node',format:'esm',outfile:'.local/notice-definitions.mjs'});
+const {noticeTemplates}=await import(pathToFileURL(resolve('.local/notice-definitions.mjs')).href);
+const definitions=Object.values(noticeTemplates).map(t=>({name:t.name,language:'en_US',category:'UTILITY',components:[{type:'BODY',text:t.body,example:{body_text:[t.example]}}]}));
+fs.mkdirSync('docs',{recursive:true});fs.writeFileSync('docs/META-NOTIFICATION-TEMPLATES.json',JSON.stringify(definitions,null,2));
+if(process.argv.includes('--docs-only'))process.exit(0);
+const env=Object.fromEntries(fs.readFileSync('.local/meta-secrets.env','utf8').split(/\r?\n/).filter(x=>x.includes('=')).map(x=>{const i=x.indexOf('=');return[x.slice(0,i).trim(),x.slice(i+1).trim().replace(/^(['"])(.*)\1$/,'$2')];}));
+const base='https://graph.facebook.com/v21.0/'+env.META_WHATSAPP_WABA_ID+'/message_templates',headers={Authorization:'Bearer '+env.META_WHATSAPP_TOKEN,'Content-Type':'application/json'};
+const read=async()=>{const r=await fetch(base+'?fields=name,status,language&limit=100',{headers});const j=await r.json();if(!r.ok){console.log(JSON.stringify({status:r.status,errorCode:j.error?.code,errorSubcode:j.error?.error_subcode}));process.exit(2);}return j.data;};
+let current=await read();for(const definition of definitions){if(current.some(t=>t.name===definition.name&&t.language===definition.language))continue;const r=await fetch(base,{method:'POST',headers,body:JSON.stringify(definition)});const j=await r.json();console.log(JSON.stringify({template:definition.name,httpStatus:r.status,status:j.status,errorCode:j.error?.code,error:j.error?.error_user_msg}));}current=await read();console.log(JSON.stringify(current.filter(t=>definitions.some(d=>d.name===t.name))));

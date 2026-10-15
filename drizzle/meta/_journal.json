@@ -1,0 +1,83 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788880522095,
+      "tag": "0000_rainy_blue_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788942604471,
+      "tag": "0001_strange_dormammu",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788943296396,
+      "tag": "0002_hot_sheva_callister",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789394737536,
+      "tag": "0003_naive_mister_fear",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1789979198267,
+      "tag": "0004_slimy_nekra",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790160543760,
+      "tag": "0005_magical_triton",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1790189712892,
+      "tag": "0006_dazzling_moonstone",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1790189891582,
+      "tag": "0007_friendly_psylocke",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790253396625,
+      "tag": "0008_mysterious_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1790501109560,
+      "tag": "0009_real_mandrill",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1790891335808,
+      "tag": "0010_pale_taskmaster",
+      "breakpoints": true
+    }
+  ]
+}
