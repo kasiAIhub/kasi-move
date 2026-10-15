@@ -5,7 +5,7 @@ import {orderNotice} from './notifications';
 import {invitationPhone} from './invite-input';
 import { customerMemory } from './customer-memory';
 import type { MetaMessaging } from './meta-whatsapp';
-import { originalKotas, kotaImage } from './kota-defaults';
+import { kotaImage } from './kota-defaults';
 import type { Database, StallRow } from './database';
 import type { GateItem, GateOrder, OrderLine } from './contracts';
 import { orderMoney } from './contracts';
@@ -86,8 +86,6 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
     notice.parameters[9]=await access.link(member,order.id);
     await options.meta?.queue(kind,member.phone,order.driverAlertId!,notice);
   }
-  const DEMO_ITEMS=(ownerId:string)=>originalKotas.map(([key, name]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)')
-    .bind(`${ownerId}-${key}`, ownerId, JSON.stringify({ id: `${ownerId}-${key}`, name, image: `/images/kota-approved-menu.png#${key}`, priceCents: null, shop: 'stall', shopName: 'Stall', enabled: true, extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] })));
   async function resetDemoStall(){
     const target=await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(DEMO_PHONE).first<{id:string}>();
     if(!target)return;
@@ -236,7 +234,6 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             const id = crypto.randomUUID();
             await db.prepare('INSERT INTO stalls(id,phone,name,town,hours,referral_name) VALUES (?,?,?,?,?,?)').bind(id, number, name, town, hours, '').run();
             await db.prepare('UPDATE stalls SET settings=json_patch(settings,?) WHERE id=?').bind(JSON.stringify({ createdAt: now() }), id).run();
-            await db.batch(originalKotas.map(([key, label]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)').bind(`${id}-${key}`, id, JSON.stringify({ id: `${id}-${key}`, name: label, image: `/images/kota-approved-menu.png#${key}`, priceCents: null, shop: 'stall', shopName: name, enabled: true, extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 1000 }] }))));
             return json({ created: true, stallId: id });
           }
           const target = await stall(text(input.stallId));
@@ -414,17 +411,13 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             ...['team_access','photo_edits','referral_awards','vendor_passwords','gate_orders','menu','order_counters','rider_invites','team_members','activation_checkouts','sessions'].map(table=>db.prepare('DELETE FROM '+table+' WHERE stall_id IN '+mine).bind(DEMO_PHONE)),
             db.prepare('DELETE FROM login_codes WHERE phone=?').bind(DEMO_PHONE),
             db.prepare('DELETE FROM stalls WHERE phone=?').bind(DEMO_PHONE),
-            db.prepare("INSERT INTO stalls(id,phone,referral_name,activated_at,is_open,settings) VALUES (?,?,'',?,1,json_patch('{}',?))").bind(id, DEMO_PHONE, at, JSON.stringify(settings)),
-            ...DEMO_ITEMS(id)
+            db.prepare("INSERT INTO stalls(id,phone,referral_name,activated_at,is_open,settings) VALUES (?,?,'',?,1,json_patch('{}',?))").bind(id, DEMO_PHONE, at, JSON.stringify(settings))
           ]);
         }
         const inserted = await db.prepare('INSERT INTO stalls(id,phone,referral_name) VALUES (?,?,?) ON CONFLICT(phone) DO NOTHING').bind(crypto.randomUUID(), number, demo ? '' : referralName).run();
         const owner = (await db.prepare('SELECT * FROM stalls WHERE phone=?').bind(number).first<StallRow>())!;
         if (inserted.meta.changes) {
           await db.prepare('UPDATE stalls SET settings=json_patch(settings,?) WHERE id=?').bind(JSON.stringify({ createdAt: now() }), owner.id).run();
-          const templates = originalKotas;
-          await db.batch(templates.map(([key, name]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)')
-            .bind(`${owner.id}-${key}`, owner.id, JSON.stringify({ id: `${owner.id}-${key}`, name, image: `/images/kota-approved-menu.png#${key}`, priceCents: null, shop: 'stall', shopName: 'Stall', enabled: true, extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] }))));
         }
         if (demo && inserted.meta.changes) await seedDemoStall(owner.id);
         const [savedOwner, savedMenu, cookie] = await Promise.all([stall(owner.id), menu(owner.id), newSession('vendor', owner.id, number)]);
@@ -612,6 +605,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           if(step===4){
             if(input.extras!==undefined) settings.kotaExtras=checkedExtras(input.extras);
             if(!Array.isArray(input.items)||input.items.length>30) fail(400,'Add up to 30 food items.');
+            if(!input.items.length) fail(400,'Add at least one food item.');
             const seen=new Set<string>();
             for(const row of input.items){
               const id=text(row.id),existing=items.find(item=>item.id===id);
