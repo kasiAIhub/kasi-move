@@ -14,7 +14,25 @@ function wrap(context: CanvasRenderingContext2D, text: string, y: number, size =
   }
   context.fillText(line,450,y);
 }
-export function StallShare({ stall, onDone, blocked }: { stall: ShareStall; onDone?:()=>void; blocked?: string }) {
+type LiveStall={stall:{name:string;hours?:string;takes_card?:number;rider_phone?:string|null;settings?:string};team?:{role:string;phone:string;name:string}[]};
+/** Keeps the share text current: refetches the stall while the page is open, and when the owner returns to it. */
+function useLiveShare(initial: ShareStall): ShareStall {
+  const [live,setLive]=useState<Partial<ShareStall>>({});
+  useEffect(()=>{
+    let stop=false;
+    const load=async()=>{try{
+      const d=await api<LiveStall>('/vendor/stall');if(stop)return;
+      const settings=JSON.parse(d.stall.settings||'{}');
+      setLive({name:d.stall.name,hours:d.stall.hours,takesCard:Boolean(d.stall.takes_card),delivery:Boolean(d.stall.rider_phone)&&settings.deliveryEnabled!==false,deliveryName:d.team?.find(m=>m.role==='rider'&&m.phone===d.stall.rider_phone)?.name||settings.riderName});
+    }catch{/* keep the last text */}};
+    void load();const timer=setInterval(()=>{if(document.visibilityState==='visible')void load();},4000),onShow=()=>{if(document.visibilityState==='visible')void load();};
+    document.addEventListener('visibilitychange',onShow);window.addEventListener('focus',onShow);
+    return ()=>{stop=true;clearInterval(timer);document.removeEventListener('visibilitychange',onShow);window.removeEventListener('focus',onShow);};
+  },[]);
+  return {...initial,...live};
+}
+export function StallShare({ stall: initialStall, onDone, blocked }: { stall: ShareStall; onDone?:()=>void; blocked?: string }) {
+  const stall=useLiveShare(initialStall);
   const [open,setOpen]=useState(false),[poster,setPoster]=useState<{url:string;file:File}|null>(null),[error,setError]=useState('');
   const task=useTask(),message=stallShareMessage(stall,appOrigin()),link=appOrigin()+stallPath(stall);
   useEffect(()=>{
