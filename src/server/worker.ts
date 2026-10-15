@@ -2,6 +2,7 @@ import { metaWhatsApp } from './meta-whatsapp';
 import { createApi } from './api';
 import type { Database } from './database';
 import { whatsapp, type WhatsAppConfig } from './whatsapp';
+import { directoryHtml, directoryJson, listedStall, listedStalls, llmsTxt, robotsTxt, sitemapXml, stallLdTag } from './directory';
 import { apiConfiguration, type Configuration } from './config';
 interface Environment extends WhatsAppConfig, Configuration {
   DB: Database;
@@ -23,6 +24,15 @@ export default {
     if (request.method === 'GET' && url.hostname === 'example.com' && !url.pathname.startsWith('/api/') && !/\.[a-z0-9]+$/i.test(url.pathname)) {
       url.hostname = 'move.kasiaihub.com';
       return Response.redirect(url.toString(), 302);
+    }
+    if (request.method === 'GET' && env.DB && ['/directory', '/api/directory', '/sitemap.xml', '/robots.txt', '/llms.txt'].includes(url.pathname)) {
+      const origin = url.origin, common = { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public,max-age=300' };
+      if (url.pathname === '/robots.txt') return new Response(robotsTxt(origin), { headers: { ...common, 'Content-Type': 'text/plain; charset=utf-8' } });
+      if (url.pathname === '/llms.txt') return new Response(llmsTxt(origin), { headers: { ...common, 'Content-Type': 'text/plain; charset=utf-8' } });
+      let stalls; try { stalls = await listedStalls(env.DB, Date.now()); } catch { return new Response('Directory unavailable', { status: 503 }); }
+      if (url.pathname === '/api/directory') return Response.json(directoryJson(stalls, origin, url.searchParams.get('town') ?? undefined), { headers: { ...common, 'Access-Control-Allow-Origin': '*' } });
+      if (url.pathname === '/sitemap.xml') return new Response(sitemapXml(stalls, origin), { headers: { ...common, 'Content-Type': 'application/xml; charset=utf-8' } });
+      return new Response(directoryHtml(stalls, origin), { headers: { ...common, 'Content-Type': 'text/html; charset=utf-8', 'Referrer-Policy': 'same-origin', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" } });
     }
     if (url.pathname.startsWith('/api/')) {
       if (!env.DB) return Response.json({ error: 'The order service is not available yet.' }, { status: 503 });
@@ -51,10 +61,11 @@ export default {
     if(stallPage && env.DB) {
       const stall=await env.DB.prepare('SELECT name,takes_card,rider_phone FROM stalls WHERE id=?').bind(stallPage[1]).first<{name:string;takes_card:number;rider_phone:string|null}>();
       if(stall?.name) {
+        const listed=await listedStall(env.DB,stallPage[1],Date.now()).catch(()=>null),ld=listed?stallLdTag(listed,url.origin):'';
         const escape=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]!));
         const title=escape(stall.name+' · Order from our digital menu');
         const description=escape((stall.rider_phone?'Order for collection or delivery.':'Order online and collect at our stall.')+(stall.takes_card?' Pay on handover with cash or card.':' Pay cash on handover.'));
-        html=html.replace(/<title>.*?<\/title>/s,'<title>'+title+'</title>').replace(/<meta\s+name="description"\s+content="[^"]*"\s*\/?>/,'<meta name="description" content="'+description+'">').replace('</head>','<meta property="og:title" content="'+title+'"><meta property="og:description" content="'+description+'"><meta property="og:type" content="website"><meta property="og:url" content="https://move.kasiaihub.com/stall/'+encodeURIComponent(stallPage[1])+'"></head>');
+        html=html.replace(/<title>.*?<\/title>/s,'<title>'+title+'</title>').replace(/<meta\s+name="description"\s+content="[^"]*"\s*\/?>/,'<meta name="description" content="'+description+'">').replace('</head>','<meta property="og:title" content="'+title+'"><meta property="og:description" content="'+description+'"><meta property="og:type" content="website"><meta property="og:url" content="https://move.kasiaihub.com/stall/'+encodeURIComponent(stallPage[1])+'">'+ld+'</head>');
       }
     }
     return new Response(html, { headers: {
