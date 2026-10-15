@@ -62,7 +62,7 @@ export function orderMoney(order: GateOrder) {
   const totalCents = order.lines.reduce((sum, line) => sum + lineTotal(line), 0);
   const shopSpendCents = order.lines.filter(line => line.shop !== 'stall').reduce((sum, line) => sum + lineTotal(line), 0);
   const kotaCents = totalCents - shopSpendCents;
-  const riderCents = order.fulfilment === 'delivery' && order.state === 'delivered' ? (order.riderFeeCents ?? 1000) : 0;
+  const riderCents = order.fulfilment === 'delivery' && order.state === 'delivered' && Boolean(order.riderPhone) ? (order.riderFeeCents ?? 1000) : 0;
   // Recording an externally paid wage is distinct from moving money.
   return { totalCents, shopSpendCents, kotaCents, riderCents, mineCents: kotaCents - riderCents };
 }

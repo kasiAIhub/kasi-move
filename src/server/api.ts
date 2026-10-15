@@ -826,8 +826,10 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             order.state = 'on_the_way';
           } else if (action === 'deliver') {
             const collection = order.fulfilment === 'collection';
-            if (collection ? !['vendor','assistant'].includes(session.role) || order.state !== 'ready' : session.role !== 'rider' || order.state !== 'on_the_way') fail(409, 'This order cannot be completed yet.');
+            const ownerComplete = !collection && session.role === 'vendor' && ['ready','on_the_way'].includes(order.state);
+            if (collection ? !['vendor','assistant'].includes(session.role) || order.state !== 'ready' : !ownerComplete && (session.role !== 'rider' || order.state !== 'on_the_way')) fail(409, 'This order cannot be completed yet.');
             if (collection) order.lines.forEach(line => { line.outcome = 'original'; });
+            else if (ownerComplete) order.lines.forEach(line => { if (line.outcome === 'pending') line.outcome = 'original'; });
             order.state = 'delivered'; order.deliveredAt = now();
           } else return fail(404, 'Page not found.');
           order.lastAction = { role:session.role, phone:session.phone, action:action!, at:now() };

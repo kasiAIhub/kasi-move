@@ -99,8 +99,8 @@ describe('v2.1 shared server foundation', () => {
     expect(second.riderFeeCents).toBe(1750);
     expect((await call('/orders/'+first.id,'GET',undefined,owner.cookie)).body.order.riderFeeCents).toBe(1000);
     const {orderMoney}=await import('../src/server/contracts');
-    expect(orderMoney({...second,state:'delivered'}).riderCents).toBe(1750);
-    expect(orderMoney({...first,state:'delivered'}).riderCents).toBe(1000);
+    expect(orderMoney({...second,state:'delivered',riderPhone:'+27811111111'}).riderCents).toBe(1750);
+    expect(orderMoney({...first,state:'delivered',riderPhone:'+27811111111'}).riderCents).toBe(1000);expect(orderMoney({...first,state:'delivered',riderPhone:null}).riderCents).toBe(0);
   });
   it('keeps a new rider inactive until accepted and rejects expired offers',async()=>{
     const owner=await vendor();
@@ -682,5 +682,16 @@ describe('v2.1 shared server foundation', () => {
     const left=(await call('/admin','GET',undefined,admin.cookie)).body.codes;
     expect(left).toHaveLength(1);expect(left[0].phone).toBe('+27815550203');expect(left[0].code).toBeTruthy();
     expect((await call('/admin/codes/clear','POST',{all:'stale'},'')).status).toBe(401);
+  });
+  it('lets the owner complete a delivery herself, but not before it is ready, and never a customer or other stall',async()=>{
+    const {owner,customer}=await setup();
+    const order=(await call('/orders','POST',orderInput(owner.id),customer)).body.order;
+    expect((await call('/orders/'+order.id+'/deliver','POST',{},owner.cookie)).status).toBe(409);
+    await call('/orders/'+order.id+'/ready','POST',{},owner.cookie);
+    expect((await call('/orders/'+order.id+'/deliver','POST',{},customer)).status).toBeGreaterThanOrEqual(403);
+    expect((await call('/orders/'+order.id+'/deliver','POST',{},owner.cookie)).status).toBe(200);
+    const done=(await call('/orders/'+order.id,'GET',undefined,owner.cookie)).body.order;
+    expect(done.state).toBe('delivered');expect(done.riderPhone ?? null).toBe(null);expect(done.lines.every((line:any)=>line.outcome!=='pending')).toBe(true);
+    expect((await call('/orders/'+order.id+'/deliver','POST',{},owner.cookie)).status).toBe(409);
   });
 });
