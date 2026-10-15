@@ -89,8 +89,8 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
     await options.meta?.queue(kind,member.phone,order.driverAlertId!,notice);
   }
   // Every new stall starts with the six standard kota names, unpriced and without pictures: the vendor prices, renames or removes them and adds their own.
-  const starterMenu=(ownerId:string,shopName:string)=>originalKotas.map(([key, name]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)')
-    .bind(`${ownerId}-${key}`, ownerId, JSON.stringify({ id: `${ownerId}-${key}`, name, priceCents: null, shop: 'stall', shopName, enabled: true, extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] })));
+  const starterMenu=(ownerId:string,shopName:string,demoPhotos=false)=>originalKotas.map(([key, name]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)')
+    .bind(`${ownerId}-${key}`, ownerId, JSON.stringify({ id: `${ownerId}-${key}`, name, priceCents: null, shop: 'stall', shopName, enabled: true, ...(demoPhotos?{image:`/images/demo/${key}.jpg`}:{}), extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] })));
   async function resetDemoStall(){
     const target=await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(DEMO_PHONE).first<{id:string}>();
     if(!target)return;
@@ -419,14 +419,14 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             db.prepare('DELETE FROM login_codes WHERE phone=?').bind(DEMO_PHONE),
             db.prepare('DELETE FROM stalls WHERE phone=?').bind(DEMO_PHONE),
             db.prepare("INSERT INTO stalls(id,phone,referral_name,activated_at,is_open,settings) VALUES (?,?,'',?,1,json_patch('{}',?))").bind(id, DEMO_PHONE, at, JSON.stringify(settings)),
-            ...starterMenu(id,'Stall')
+            ...starterMenu(id,'Stall',true)
           ]);
         }
         const inserted = await db.prepare('INSERT INTO stalls(id,phone,referral_name) VALUES (?,?,?) ON CONFLICT(phone) DO NOTHING').bind(crypto.randomUUID(), number, demo ? '' : referralName).run();
         const owner = (await db.prepare('SELECT * FROM stalls WHERE phone=?').bind(number).first<StallRow>())!;
         if (inserted.meta.changes) {
           await db.prepare('UPDATE stalls SET settings=json_patch(settings,?) WHERE id=?').bind(JSON.stringify({ createdAt: now() }), owner.id).run();
-          await db.batch(starterMenu(owner.id, 'Stall'));
+          await db.batch(starterMenu(owner.id, 'Stall', demo));
         }
         if (demo && inserted.meta.changes) await seedDemoStall(owner.id);
         const [savedOwner, savedMenu, cookie] = await Promise.all([stall(owner.id), menu(owner.id), newSession('vendor', owner.id, number)]);

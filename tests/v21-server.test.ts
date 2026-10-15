@@ -644,6 +644,16 @@ describe('v2.1 shared server foundation', () => {
     sqlite.exec(backfill);sqlite.exec(backfill);expect(sqlite.prepare('SELECT * FROM referral_awards').all()).toHaveLength(1);expect(sqlite.prepare('SELECT * FROM referral_awards WHERE stall_id=?').get(owner.id)).toMatchObject({amount_cents:7500,paid_at:null,connector_key:'thembi'});
   });
 
+  it('demo reset seeds the six kota photos; real vendors get none', async () => {
+    api = createApi(db, provider, () => time, { activationKey: 'demo-test-admin-key-not-used-in-production', demoCode: '73915264' });
+    const demo = await call('/auth/verify', 'POST', { phone: '0820000000', code: '73915264' });
+    expect(demo.status).toBe(200);
+    const menu = (await call('/vendor/stall', 'GET', undefined, demo.cookie)).body.menu;
+    expect(menu).toHaveLength(6);
+    expect(menu.every((i: any) => /^\/images\/demo\/[a-z-]+\.jpg$/.test(i.image))).toBe(true);
+    const real = await vendor('0812345678');
+    expect((await call('/vendor/stall', 'GET', undefined, real.cookie)).body.menu.every((i: any) => !i.image)).toBe(true);
+  });
   it('runs a permanent demo stall without weakening real codes or touching WhatsApp, payments or admin totals',async()=>{
     const key='demo-test-admin-key-not-used-in-production',demoCode='73915264';
     api=createApi(db,provider,()=>time,{activationKey:key,demoCode});
