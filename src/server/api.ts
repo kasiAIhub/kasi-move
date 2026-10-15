@@ -77,7 +77,9 @@ export interface ApiOptions {
   upload?: (key: string, bytes: ArrayBuffer, contentType: string) => Promise<void>;
 }
 export function createApi(db: Database, messaging: WhatsApp, now: () => number = Date.now, options: ApiOptions = {}) {
-  const access=teamAccess(db,options.activationKey||'');
+  // Links in messages point at the address the app is being used on (the test address now, move.kasiaihub.com after cutover).
+  let appOrigin='https://move.kasiaihub.com';
+  const access=teamAccess(db,options.activationKey||'',()=>appOrigin);
   const demoStall=async(stallId:string)=>Boolean(await db.prepare('SELECT id FROM stalls WHERE id=? AND phone=?').bind(stallId,DEMO_PHONE).first());
   async function driverNotice(order:GateOrder,kind:'assignment'|'ready') {
     const member=await db.prepare("SELECT * FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(order.stallId,order.riderPhone).first<Member>();
@@ -161,6 +163,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
     catch { return fail(400, 'Check the submitted details.'); }
   }
   return async function fetchApi(request: Request): Promise<Response> {
+    try { const origin = new URL(request.url).origin; if (/^https:\/\//.test(origin)) appOrigin = origin; } catch { /* keep default */ }
     try {
       const url = new URL(request.url);
       const path = url.pathname.replace(/^\/api/, '');
@@ -363,7 +366,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           ]);
           const saved=results[0] as {meta:{changes:number}};
           if(!saved.meta.changes) fail(409,'The account changed. Refresh before confirming.');
-          try {await options.meta?.queue('activation',owner.phone,owner.id+':'+settings.billing.paidThrough,{parameters:[owner.name||'your stall','https://move.kasiaihub.com/kitchen']});}catch{console.error('Payment saved; WhatsApp activation could not be queued.');}
+          try {await options.meta?.queue('activation',owner.phone,owner.id+':'+settings.billing.paidThrough,{parameters:[owner.name||'your stall',appOrigin+'/kitchen']});}catch{console.error('Payment saved; WhatsApp activation could not be queued.');}
           if((results[1] as {meta:{changes:number}}).meta.changes)try{await connectorNotice(owner.id);}catch{console.error('Referral saved; Connector WhatsApp could not be queued.');}
           return json({ activated: true });
         }
@@ -389,7 +392,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         await limit(`ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 15, 600000);
         if (options.manualCodes && options.activationKey && options.activationKey.length >= 32) {
           await requestCode(db, number, now());
-          return json({ sent: false, queued: true, requestedAt: now(), requestLink: options.supportPhone ? 'https://wa.me/' + options.supportPhone.replace(/\D/g, '') + '?text=' + encodeURIComponent('Hi Thandi, let’s open my stall! My Kasi Move login number is ' + number + '. Please send my code to this number.\nOpen this request: https://move.kasiaihub.com/admin?phone=' + encodeURIComponent(number)) : null, message: 'Your request is in Thandi’s admin inbox. She will create your code and arrange WhatsApp delivery. The code expires 10 minutes after she creates it.' });
+          return json({ sent: false, queued: true, requestedAt: now(), requestLink: options.supportPhone ? 'https://wa.me/' + options.supportPhone.replace(/\D/g, '') + '?text=' + encodeURIComponent('Hi Thandi, let’s open my stall! My Kasi Move login number is ' + number + '. Please send my code to this number.\nOpen this request: '+appOrigin+'/admin?phone=' + encodeURIComponent(number)) : null, message: 'Your request is in Thandi’s admin inbox. She will create your code and arrange WhatsApp delivery. The code expires 10 minutes after she creates it.' });
         }
         await messaging.sendCode(number);
         return json({ sent: true });
@@ -915,7 +918,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             : await db.prepare('UPDATE gate_orders SET body=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(order), order.id, row.version).run();
           if (!saved.meta.changes) fail(409, 'This order changed. Refresh and try again.');
           if(action==='cancel'){
-            try {const owner=await stall(order.stallId);if(owner.phone!==DEMO_PHONE)await options.meta?.queue('cancellation',owner.phone,order.id+':'+(row.version+1),orderNotice('cancellation',order,owner.name));}catch{console.error('Order updated; WhatsApp notification could not be queued.');}
+            try {const owner=await stall(order.stallId);if(owner.phone!==DEMO_PHONE)await options.meta?.queue('cancellation',owner.phone,order.id+':'+(row.version+1),orderNotice('cancellation',order,owner.name,appOrigin));}catch{console.error('Order updated; WhatsApp notification could not be queued.');}
           }
           if(order.riderPhone&&['assign','ready','resend'].includes(action||''))try{await driverNotice(order,order.state==='ready'?'ready':'assignment');}catch{console.error('Order saved; delivery alert could not be queued.');}
           return json({ order, money: orderMoney(order) });

@@ -80,3 +80,6 @@ export async function openWhatsAppAction<T extends {link?: string}>(work: () => 
   try { const result = await work(); if (popup) { if (result.link) popup.location.href = result.link; else popup.close(); } return { ...result, popupBlocked: !popup }; }
   catch (error) { popup?.close(); throw error; }
 }
+
+/** Links the vendor shares point at the address the app is open on: the test address now, move.kasiaihub.com after cutover. */
+export const appOrigin = () => typeof window === 'undefined' ? 'https://move.kasiaihub.com' : window.location.origin;

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { api, useTask, wa } from './client';
+import { api, appOrigin, useTask, wa } from './client';
 import { ErrorText } from './common';
 
 export interface ShareStall { id: string; name: string; takesCard: boolean; delivery: boolean; deliveryName?:string }
 export function stallShareMessage(stall: ShareStall) {
-  return 'Order here: https://move.kasiaihub.com/stall/'+stall.id+'\n\n*'+stall.name+'* — official digital menu.\n'+
+  return 'Order here: '+appOrigin()+'/stall/'+stall.id+'\n\n*'+(stall.name.trim()||'Our stall')+'* — official digital menu.\n'+
     (stall.delivery ? 'Collect from our stall or get delivery to your gate.\nPay on collection or at your gate' : 'Order online and collect from our stall.\nPay on collection')+
     (stall.takesCard ? ': cash or card payments.' : ': cash.')+
     (stall.delivery ? (stall.deliveryName ? '\nOur delivery guy is '+stall.deliveryName+'.'+(stall.takesCard?' He brings a speed point machine.':'') : stall.takesCard?'\nOur delivery person brings a speed point machine.':'') : '');

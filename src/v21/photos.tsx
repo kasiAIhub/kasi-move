@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import type {GateItem,GateOrder} from '../server/contracts';
-import {api,useResource,useTask,wa} from './client';
+import {api,appOrigin,useResource,useTask,wa} from './client';
 import {ErrorText} from './common';
 import {ProductImage} from '../components/ProductImage';
 
@@ -26,6 +26,6 @@ export function OrderPhoto({order,stallName,reload}:{order:GateOrder;stallName:s
  const input=useRef<HTMLInputElement>(null),task=useTask(),[file,setFile]=useState<File|null>(null),[fallback,setFallback]=useState(false);
  useEffect(()=>{let active=true;setFile(null);if(order.photo)void fetch(order.photo).then(r=>{if(!r.ok)throw Error();return r.blob();}).then(b=>{if(active)setFile(new File([b],'food-from-'+stallName.replace(/[^a-z0-9]/gi,'-')+'.jpg',{type:b.type}));}).catch(()=>{});return()=>{active=false;};},[order.photo,stallName]);
  if(order.state!=='ready')return null;
- const message='Fresh from '+stallName+'! Order from our menu: https://move.kasiaihub.com/stall/'+order.stallId;
+ const message='Fresh from '+stallName+'! Order from our menu: '+appOrigin()+'/stall/'+order.stallId;
  return <section className="v-stack"><button className="v-button secondary" disabled={task.busy} onClick={()=>input.current?.click()}>{order.photo?'Retake order picture':'Take a picture of this order'}</button><input hidden ref={input} type="file" accept="image/*" capture="environment" onChange={e=>{const selected=e.target.files?.[0];if(selected)void task.run(async()=>{const photo=await preparePhoto(selected);await api('/orders/'+order.id+'/photo','POST',photo);await reload();});e.target.value='';}}/><ErrorText text={task.error}/>{order.photo&&<><img src={order.photo} alt="Ready food to share" style={{width:180,borderRadius:12}}/><button className="v-button" disabled={!file||task.busy} onClick={()=>void task.run(async()=>{if(file&&navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file],title:stallName,text:message});}catch(e){if((e as Error).name!=='AbortError')setFallback(true);}}else setFallback(true);})}>Share to WhatsApp</button><p className="muted">Choose WhatsApp, then Status or a chat. Your photo and menu link are shared; customer details are not added.</p>{fallback&&<><a className="v-button secondary" href={order.photo} download="kasi-move-food.jpg">Save photo</a><a className="v-link" href={wa('',message)}>Open WhatsApp with menu link</a><p>Attach the saved photo in WhatsApp, then tap Send.</p></>}</>}</section>;
 }
