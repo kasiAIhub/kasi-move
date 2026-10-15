@@ -44,10 +44,10 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
 }
 export const useIdentity = () => useContext(IdentityContext);
 export function useResource<T>(path: string, poll = false) {
-  const seed = useRef({path, data:resourceSeeds.get(path) as T|undefined});
+  const seed = useRef({path, data:resourceSeeds.get(path) as T|undefined}), lastPath = useRef<string|null>(null);
   const [data, setData] = useState<T | null>(seed.current.data??null), [error, setError] = useState('');
   const reload = useCallback(async () => { try { const result = await api<T>(path); setData(result); setError(''); return result; } catch (error) { setError((error as Error).message); return null; } }, [path]);
-  useEffect(() => { let active = true, inFlight = false; const seeded=seed.current.path===path?seed.current.data:undefined; resourceSeeds.delete(path); setData(seeded??null); setError('');
+  useEffect(() => { let active = true, inFlight = false; const seeded=seed.current.path===path?seed.current.data:undefined; resourceSeeds.delete(path); seed.current.data=undefined; setData(current=>seeded??(lastPath.current===path?current:null)); lastPath.current=path; setError('');
     const load = async () => { if(inFlight)return; inFlight=true; try { const result = await api<T>(path); if (active) { setData(result); setError(''); } } catch (error) { if (active) setError((error as Error).message); } finally { inFlight=false; } };
     if(!seeded) void load(); const timer = poll ? setInterval(() => { if (document.visibilityState === 'visible') void load(); }, 4000) : undefined;
     const focus = () => { if (poll && document.visibilityState === 'visible') void load(); }; window.addEventListener('focus', focus); document.addEventListener('visibilitychange', focus);
