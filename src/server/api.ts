@@ -25,6 +25,11 @@ const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =
   status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extra },
 });
 const token = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), value => value.toString(16).padStart(2, '0')).join('');
+async function codeHash(code: string, salt: string) {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 100000 }, material, 256);
+  return Array.from(new Uint8Array(bits), v => v.toString(16).padStart(2, '0')).join('');
+}
 const hash = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), value => value.toString(16).padStart(2, '0')).join('');
 const dateZA = (time: number) => new Date(time + 7200000).toISOString().slice(0, 10);
 function phone(value: unknown): string {
@@ -181,10 +186,17 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
       if (path === '/admin/login' && request.method === 'POST') {
         await limit(`admin:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 5, 600000);
         const input = await body(request);
-        if (!options.activationKey || options.activationKey.length < 32 || typeof input.key !== 'string' || await digest(input.key) !== await digest(options.activationKey)) fail(403, 'Access denied.');
-        const secret = token();
-        await db.prepare('INSERT INTO sessions(hash,role,expires_at) VALUES (?,?,?)').bind(await hash(secret), 'admin', now() + 3600000).run();
-        return json({ signedIn: true }, 200, { 'Set-Cookie': `kk_admin=${secret}; HttpOnly; Secure; SameSite=Strict; Path=/api/admin; Max-Age=3600` });
+        const keyOk = Boolean(options.activationKey) && options.activationKey!.length >= 32 && typeof input.key === 'string' && await digest(input.key) === await digest(options.activationKey!);
+        let codeOk = false;
+        if (!keyOk && typeof input.code === 'string' && options.activationKey) {
+          await limit('admin-code-all', 30, 3600000);
+          const saved = await db.prepare("SELECT salt,hash FROM admin_code WHERE id='admin'").first<{ salt: string; hash: string }>();
+          codeOk = Boolean(saved) && sameSecret(await codeHash(input.code, saved!.salt), saved!.hash);
+        }
+        if (!keyOk && !codeOk) fail(403, 'Access denied.');
+        const remember = input.remember === true, secret = token();
+        await db.prepare('INSERT INTO sessions(hash,role,expires_at) VALUES (?,?,?)').bind(await hash(secret), 'admin', now() + (remember ? 30 * 86400000 : 3600000)).run();
+        return json({ signedIn: true }, 200, { 'Set-Cookie': `kk_admin=${secret}; HttpOnly; Secure; SameSite=Strict; Path=/api/admin; Max-Age=${remember ? 2592000 : 3600}` });
       }
       if (path.startsWith('/admin')) {
         const secret = request.headers.get('cookie')?.match(/(?:^|;\s*)kk_admin=([a-f0-9]{64})(?:;|$)/)?.[1];
@@ -197,7 +209,40 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           await db.prepare("DELETE FROM sessions WHERE hash=? AND role='admin'").bind(await hash(secret)).run();
           return json({ signedOut: true }, 200, { 'Set-Cookie': 'kk_admin=; HttpOnly; Secure; SameSite=Strict; Path=/api/admin; Max-Age=0' });
         }
-        if (path === '/admin' && request.method === 'GET') return json({ referrals:await referralReport(db), whatsapp: options.meta ? await options.meta.overview() : null, stalls: (await db.prepare('SELECT id,phone,name,referral_name,first_order_at,activated_at,payment_reported_at,settings FROM stalls WHERE phone<>?').bind(DEMO_PHONE).all()).results, codes: await pendingCodes(db, options.activationKey, now()) });
+        if (path === '/admin/code/set' && request.method === 'POST') {
+          await limit('admin-code-set', 10, 3600000);
+          const input = await body(request), next = typeof input.code === 'string' ? input.code.trim() : '';
+          if (next.length < 6 || next.length > 64) fail(400, 'Use at least 6 characters for your admin code.');
+          const saved = await db.prepare("SELECT salt,hash FROM admin_code WHERE id='admin'").first<{ salt: string; hash: string }>();
+          if (saved) {
+            const currentOk = typeof input.current === 'string' && sameSecret(await codeHash(input.current, saved.salt), saved.hash);
+            const keyOk = Boolean(options.activationKey) && typeof input.key === 'string' && await digest(input.key) === await digest(options.activationKey!);
+            if (!currentOk && !keyOk) fail(403, 'Enter your current admin code, or the long admin key, to change it.');
+          }
+          const salt = token();
+          await db.prepare("INSERT INTO admin_code(id,salt,hash,updated_at) VALUES ('admin',?,?,?) ON CONFLICT(id) DO UPDATE SET salt=excluded.salt,hash=excluded.hash,updated_at=excluded.updated_at").bind(salt, await codeHash(next, salt), now()).run();
+          return json({ saved: true });
+        }
+        if (path === '/admin/vendor' && (request.method === 'POST' || request.method === 'PUT')) {
+          const input = await body(request), name = text(input.name), town = text(input.town), hours = text(input.hours);
+          if (!name || !town) fail(400, 'Add a stall name and town.');
+          if (!hoursRange(hours)) fail(400, 'Use hours like 08:00–21:00.');
+          if (request.method === 'POST') {
+            const number = phone(input.phone);
+            if (number === DEMO_PHONE) fail(409, 'That number is reserved for the demo stall.');
+            if (await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(number).first()) fail(409, 'A stall already uses this number.');
+            const id = crypto.randomUUID();
+            await db.prepare('INSERT INTO stalls(id,phone,name,town,hours,referral_name) VALUES (?,?,?,?,?,?)').bind(id, number, name, town, hours, '').run();
+            await db.prepare('UPDATE stalls SET settings=json_patch(settings,?) WHERE id=?').bind(JSON.stringify({ createdAt: now() }), id).run();
+            await db.batch(originalKotas.map(([key, label]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)').bind(`${id}-${key}`, id, JSON.stringify({ id: `${id}-${key}`, name: label, image: `/images/kota-approved-menu.png#${key}`, priceCents: null, shop: 'stall', shopName: name, enabled: true, extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 1000 }] }))));
+            return json({ created: true, stallId: id });
+          }
+          const target = await stall(text(input.stallId));
+          if (target.phone === DEMO_PHONE) fail(409, 'The demo stall resets on every sign-in.');
+          await db.prepare('UPDATE stalls SET name=?,town=?,hours=? WHERE id=?').bind(name, town, hours, target.id).run();
+          return json({ saved: true });
+        }
+        if (path === '/admin' && request.method === 'GET') return json({ adminCodeSet: Boolean(await db.prepare("SELECT id FROM admin_code WHERE id='admin'").first()), referrals:await referralReport(db), whatsapp: options.meta ? await options.meta.overview() : null, stalls: (await db.prepare('SELECT id,phone,name,town,hours,referral_name,first_order_at,activated_at,payment_reported_at,settings FROM stalls WHERE phone<>?').bind(DEMO_PHONE).all()).results, codes: await pendingCodes(db, options.activationKey, now()) });
         if(path==='/admin/connectors/contact'&&request.method==='POST'){
           const input=await body(request),name=text(input.name),key=name.toLowerCase().replace(/[ \t]/g,''),number=invitationPhone(text(input.phone));
           if(input.verified!==true)fail(400,'Confirm this is the Connector’s WhatsApp number and they agreed to receive earnings updates.');
@@ -244,8 +289,15 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           await options.meta?.retry(text(input.id, 250));
           return json({ queued: true });
         }
-        if (path === '/admin/reset-stall' && request.method === 'POST') {
+        if ((path === '/admin/reset-stall' || path === '/admin/stall/remove') && request.method === 'POST') {
           const input = await body(request), number = phone(input.phone);
+          if (path === '/admin/stall/remove') {
+            if (number === DEMO_PHONE) fail(409, 'The demo stall cannot be removed.');
+            if (phone(input.confirmPhone) !== number) fail(400, 'Type the vendor number exactly to remove this stall.');
+            const record = await db.prepare('SELECT activated_at,settings FROM stalls WHERE phone=?').bind(number).first<{ activated_at: number | null; settings: string }>();
+            const paid = Boolean(record && (record.activated_at !== null || (JSON.parse(record.settings).billing?.payments?.length ?? 0) > 0));
+            if (paid && input.paidAck !== true) fail(409, 'This vendor has paid. Tick the box to confirm you want to remove a paying vendor.');
+          }
           await db.batch([
             db.prepare('DELETE FROM customer_devices WHERE profile_id IN (SELECT id FROM customer_profiles WHERE phone=?)').bind(number),
             db.prepare('DELETE FROM customer_profiles WHERE phone=?').bind(number),

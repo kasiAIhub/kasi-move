@@ -1,16 +1,18 @@
 import {AdminPhotos} from './photos';
 import {Connectors,type Referrals} from './connectors';
+import {AdminCodeSettings,AddVendor,VendorTools,AdminQr} from './admin-tools';
 import { useEffect, useState } from 'react';
 import { api, useResource, useTask, wa, rand } from './client';
 import { stallPlan, LAUNCH_PRICE, MONTHLY_PRICE } from '../server/plan';
 import type { StallRow } from '../server/database';
 import { ErrorText, Frame } from './common';
 interface AdminData {
+  adminCodeSet?: boolean;
   referrals:Referrals;
   whatsapp?: { configured: boolean; mode: string; inbox: {id:string;phone:string;text:string;sent_at:number}[]; deliveries: {id:string;phone:string;kind:string;manualText?:string;status:string;error:string|null;created_at:number}[] };
 
   codes: { phone: string; code: string | null; expiresAt: number }[];
-  stalls: { id: string; name: string; referral_name?: string; phone: string; first_order_at: number | null; activated_at: number | null; payment_reported_at: number | null }[];
+  stalls: { id: string; name: string; town?: string; hours?: string; settings?: string; referral_name?: string; phone: string; first_order_at: number | null; activated_at: number | null; payment_reported_at: number | null }[];
 }
 const localPhone = (phone: string) => phone.replace(/^\+27/, '0');
 export function Admin() {
@@ -23,18 +25,17 @@ export function Admin() {
   return ready ? <AdminSigned initialError={error} /> : <Frame><h1>Opening admin…</h1></Frame>;
 }
 function AdminLogin({ onSignedIn }: { onSignedIn: () => void }) {
-  const [key, setKey] = useState(''), [remember, setRemember] = useState(false);
+  const [key, setKey] = useState(''), [remember, setRemember] = useState(true);
   const task = useTask();
   return <Frame><h1>Admin sign-in</h1><p>This is where Thandi sends vendor login codes.</p>
-    <p>Sign in using your private admin key or private admin link. Bookmark <strong>move.kasiaihub.com/admin</strong>.</p>
+    <p>Sign in with your admin code. The long admin key or private admin link works too. Bookmark <strong>move.kasiaihub.com/admin</strong>.</p>
     <form className="v-stack" onSubmit={event => { event.preventDefault(); void task.run(async () => {
       let access = key.trim();
       if (access.includes('#access=')) access = new URLSearchParams(access.split('#')[1]).get('access') || '';
-      await api('/admin/login','POST',{key:access});
-      if (remember) await api('/admin/remember','POST',{});
+      await api('/admin/login','POST',access.length>=32?{key:access,remember}:{code:access,remember});
       setKey(''); onSignedIn();
     }); }}>
-      <label>Private admin key or link<input type="password" autoComplete="current-password" required value={key} onChange={event=>setKey(event.target.value)} /></label>
+      <label>Admin code, key or link<input type="password" autoComplete="current-password" required value={key} onChange={event=>setKey(event.target.value)} /></label>
       <label><input type="checkbox" checked={remember} onChange={event=>setRemember(event.target.checked)} /> Keep me signed in for 30 days on my own device</label>
       <button className="v-button" disabled={task.busy}>Open login requests</button><ErrorText text={task.error}/>
     </form><p>Your private key is different from a vendor's four-digit code. Keep it private.</p>
@@ -53,6 +54,9 @@ function AdminSigned({ initialError }: { initialError: string }) {
     <ErrorText text={resource.error || task.error || initialError} />
     {resource.data && <><button className="v-button secondary" disabled={task.busy || remembered} onClick={()=>{void task.run(async()=>{await api('/admin/remember','POST',{});setRemembered(true);});}}>{remembered?'Signed in for 30 days on this device':'Keep admin signed in on my device'}</button>
       <button className="v-link" onClick={()=>{void task.run(async()=>{await api('/admin/logout','POST',{});setSignedOut(true);resource.setData(null);});}}>Sign out of admin</button>
+      <AdminCodeSettings isSet={Boolean(resource.data.adminCodeSet)} reload={resource.reload}/>
+      <AdminQr/>
+      <AddVendor reload={resource.reload}/>
       <p>{resource.data.whatsapp?.configured ? 'Create a code to request WhatsApp delivery through Meta. Check the message log below for its result. Manual sending remains available.' : 'Find the number from the WhatsApp request, tap Send code on WhatsApp, then tap Send in WhatsApp.'}</p>
       <label>Find a WhatsApp number<input type="tel" value={search} onChange={event=>setSearch(event.target.value)} placeholder="081 234 5678" /></label>
       <button className="v-link" onClick={()=>{setSearch(''); window.history.replaceState(null,'','/admin');}}>Show all requests ({resource.data.codes.length})</button>
@@ -79,6 +83,7 @@ function AdminSigned({ initialError }: { initialError: string }) {
       <Connectors report={resource.data.referrals} reload={resource.reload}/><details><summary>All vendors and payments ({resource.data.stalls.length})</summary>
       <h2>All vendors</h2><p>{LAUNCH_PRICE}<br/>{MONTHLY_PRICE}</p><p>Every registered stall appears here, including owners still setting up. Open a menu to review its food photos.</p>{!resource.data.stalls.length && <p>No vendors registered yet.</p>}{resource.data.stalls.map(stall => { const plan=stallPlan(stall as StallRow,Date.now()); return <div className="v-card v-stack" key={stall.id}><h3>{stall.name || 'Setting up'}</h3><AdminPhotos stallId={stall.id}/><a className="v-button secondary" href={'/stall/'+stall.id} target="_blank" rel="noreferrer">View menu and photos</a><a href={wa(stall.phone)}>{stall.phone}</a><div className="v-row"><span>Referral name</span><strong>{stall.referral_name || '—'}</strong></div><div className="v-row"><span>Referral fee owed</span><strong>{rand(resource.data!.referrals.awards.find(a=>a.stall_id===stall.id&&a.paid_at===null)?.amount_cents||0)}</strong></div>{resource.data!.referrals.awards.some(a=>a.stall_id===stall.id&&a.paid_at!==null)&&<p>Referral payout PAID</p>}<p>First order: {stall.first_order_at ? new Date(stall.first_order_at).toLocaleDateString('en-ZA') : 'None yet'}</p><p>{plan.paidThrough?'Paid through '+new Date(plan.paidThrough).toLocaleDateString('en-ZA'):'Setup payment due'}</p>{stall.payment_reported_at&&<p>Vendor says they have paid.</p>}
         {plan.amountDueCents>0&&<><label>Payment reference<input value={reference[stall.id]||''} onChange={event=>setReference({...reference,[stall.id]:event.target.value})}/></label><button className="v-button" disabled={task.busy||!reference[stall.id]?.trim()} onClick={()=>{if(window.confirm('Confirm receipt of '+rand(plan.amountDueCents)+' for '+(stall.name||stall.phone)+'?')) void task.run(async()=>{await api('/admin/paid','POST',{stallId:stall.id,amountCents:plan.amountDueCents,reference:reference[stall.id]});await resource.reload();});}}>Confirm {rand(plan.amountDueCents)} received</button></>}
+        <VendorTools stall={stall} paid={stall.activated_at!==null||(JSON.parse(stall.settings||'{}').billing?.payments?.length??0)>0} reload={resource.reload}/>
       </div>; })}
       </details>
     </>}
