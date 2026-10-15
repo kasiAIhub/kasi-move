@@ -633,4 +633,31 @@ describe('v2.1 shared server foundation', () => {
     sqlite.exec(backfill);sqlite.exec(backfill);expect(sqlite.prepare('SELECT * FROM referral_awards').all()).toHaveLength(1);expect(sqlite.prepare('SELECT * FROM referral_awards WHERE stall_id=?').get(owner.id)).toMatchObject({amount_cents:7500,paid_at:null,connector_key:'thembi'});
   });
 
+  it('runs a permanent demo stall without weakening real codes or touching WhatsApp, payments or admin totals',async()=>{
+    const key='demo-test-admin-key-not-used-in-production',demoCode='73915264';
+    api=createApi(db,provider,()=>time,{activationKey:key,demoCode});
+    const demoPhone='0820000000';
+    expect((await call('/auth/code','POST',{phone:demoPhone})).body).toMatchObject({demo:true,sent:false});
+    expect((await call('/auth/verify','POST',{phone:demoPhone,code:'8492'})).status).toBe(401);
+    expect((await call('/auth/verify','POST',{phone:'0815550101',code:'73915264'})).status).toBe(400);
+    const first=await call('/auth/verify','POST',{phone:demoPhone,code:demoCode,referral_name:'Thembi'});
+    expect(first.status).toBe(200);expect(first.body.stall.referral_name).toBe('');
+    const owner=first.body.stall,cookie=first.cookie;
+    expect(first.body.owner.stall.is_open).toBe(1);
+    expect(first.body.owner.menu.every((item:any)=>item.priceCents>0)).toBe(true);
+    expect((await call('/session','GET',undefined,cookie)).body.demo).toBe(true);
+    expect((await call('/vendor/activation','POST',{},cookie)).status).toBe(200);
+    const admin=await call('/admin/login','POST',{key});
+    expect((await call('/admin/paid','POST',{stallId:owner.id,amountCents:0,reference:'x'},admin.cookie)).status).toBe(409);
+    expect((await call('/admin','GET',undefined,admin.cookie)).body.stalls.some((row:any)=>row.phone==='+27820000000')).toBe(false);
+    // The code is reusable, and every sign-in starts from a clean demo stall.
+    await call('/vendor/stall','PUT',{name:'Changed',town:'X',hours:'08:00–21:00',open:true,takesCard:false},cookie);
+    const second=await call('/auth/verify','POST',{phone:demoPhone,code:demoCode});
+    expect(second.status).toBe(200);expect(second.body.stall.name).toBe('Demo Stall');expect(second.body.stall.id).not.toBe(owner.id);
+    expect(sqlite.prepare("SELECT count(*) AS n FROM whatsapp_outbox").get()).toEqual({n:0});
+    // Unconfigured deployments keep the number closed.
+    api=createApi(db,provider,()=>time,{activationKey:key});
+    expect((await call('/auth/code','POST',{phone:demoPhone})).status).toBe(403);
+    expect((await call('/auth/verify','POST',{phone:demoPhone,code:demoCode})).status).toBe(401);
+  });
 });

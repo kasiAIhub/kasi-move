@@ -20,7 +20,7 @@ export const wa = (phone: string, message = '') => `https://wa.me/${phone.replac
 export const settingsOf = (stall: StallRow): StallSettings => JSON.parse(stall.settings || '{}');
 export interface OwnerData { team?: import('./team').TeamMember[]; stall: StallRow; menu: GateItem[]; riderOffer?: {name?:string;phone:string;fee_cents:number;decision:string|null;expires_at:number}|null }
 export interface PublicStall { id: string; name: string; phone: string; hours: string; open: boolean; takesCard: boolean; delivery: boolean; alcoholTesting?: boolean; kotaDisplay?: GateItem[]; nextDoorDisplay?: GateItem[]; menu: GateItem[] }
-interface Session { role: 'vendor' | 'customer' | 'rider' | 'assistant'; stallId: string | null; ownerAvailable?: boolean; ownerStallId?: string; ownerSetupComplete?: boolean }
+interface Session { role: 'vendor' | 'customer' | 'rider' | 'assistant'; stallId: string | null; ownerAvailable?: boolean; ownerStallId?: string; ownerSetupComplete?: boolean; demo?: boolean }
 const resourceSeeds = new Map<string, unknown>();
 interface Identity { acceptVendor: (owner: OwnerData) => void; session: Session | null; loading: boolean; refresh: () => Promise<void> }
 const IdentityContext = createContext<Identity>(null!);
@@ -30,7 +30,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => { const version=++revision.current; try { const result=await api('/session'); if(version===revision.current)setSession(result); } catch { if(version===revision.current)setSession(null); } finally { if(version===revision.current)setLoading(false); } }, []);
   const acceptVendor = useCallback((owner: OwnerData) => {
     ++revision.current; resourceSeeds.clear(); resourceSeeds.set('/vendor/stall', owner);
-    setSession({role:'vendor',stallId:owner.stall.id,ownerAvailable:true,ownerStallId:owner.stall.id,ownerSetupComplete:(settingsOf(owner.stall).setupStep??0)>=9}); setLoading(false);
+    setSession({role:'vendor',stallId:owner.stall.id,ownerAvailable:true,ownerStallId:owner.stall.id,ownerSetupComplete:(settingsOf(owner.stall).setupStep??0)>=9,demo:owner.stall.phone==='+27820000000'}); setLoading(false);
   }, []);
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {

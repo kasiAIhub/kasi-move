@@ -1,4 +1,5 @@
 import {referralReport} from './referrals';
+import {DEMO_PHONE,DEMO_YEARS_MS,sameSecret} from './demo';
 import {teamAccess,type Member} from './team-access';
 import {orderNotice} from './notifications';
 import {invitationPhone} from './invite-input';
@@ -64,18 +65,37 @@ export interface ApiOptions {
   paymentUrl?: string;
   paymentInstructions?: string;
   activationKey?: string;
+  demoCode?: string;
   alcoholTesting?: boolean;
   deletePhotos?: (stallId: string) => Promise<void>;
   upload?: (key: string, bytes: ArrayBuffer, contentType: string) => Promise<void>;
 }
 export function createApi(db: Database, messaging: WhatsApp, now: () => number = Date.now, options: ApiOptions = {}) {
   const access=teamAccess(db,options.activationKey||'');
+  const demoStall=async(stallId:string)=>Boolean(await db.prepare('SELECT id FROM stalls WHERE id=? AND phone=?').bind(stallId,DEMO_PHONE).first());
   async function driverNotice(order:GateOrder,kind:'assignment'|'ready') {
     const member=await db.prepare("SELECT * FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(order.stallId,order.riderPhone).first<Member>();
-    if(!member)return;
+    if(!member||await demoStall(order.stallId))return;
     const notice=orderNotice('assignment',order,(await stall(order.stallId)).name);
     notice.parameters[9]=await access.link(member,order.id);
     await options.meta?.queue(kind,member.phone,order.driverAlertId!,notice);
+  }
+  async function resetDemoStall(){
+    const target=await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(DEMO_PHONE).first<{id:string}>();
+    if(!target)return;
+    await options.deletePhotos?.(target.id);
+    await db.batch([
+      db.prepare("DELETE FROM whatsapp_outbox WHERE json_extract(payload,'$.orderId') IN (SELECT id FROM gate_orders WHERE stall_id=?)").bind(target.id),
+      ...['team_access','photo_edits','referral_awards','vendor_passwords','gate_orders','menu','order_counters','rider_invites','team_members','activation_checkouts','sessions'].map(table=>db.prepare('DELETE FROM '+table+' WHERE stall_id=?').bind(target.id)),
+      db.prepare('DELETE FROM login_codes WHERE phone=?').bind(DEMO_PHONE),
+      db.prepare('DELETE FROM stalls WHERE id=? AND phone=?').bind(target.id,DEMO_PHONE),
+    ]);
+  }
+  async function seedDemoStall(id:string){
+    const at=now(),settings={createdAt:at,setupStep:9,hoursPreset:'Day and night',overrideOpen:true,overrideUntil:at+DEMO_YEARS_MS,billing:{paidThrough:at+DEMO_YEARS_MS,payments:[]}};
+    await db.prepare("UPDATE stalls SET name='Demo Stall',town='Mamelodi',hours='00:00–23:59',activated_at=?,is_open=1,settings=json_patch(settings,?) WHERE id=?").bind(at,JSON.stringify(settings),id).run();
+    const rows=(await db.prepare('SELECT id,body FROM menu WHERE stall_id=? ORDER BY rowid').bind(id).all<{id:string;body:string}>()).results;
+    await db.batch(rows.map((row,i)=>db.prepare('UPDATE menu SET body=? WHERE id=?').bind(JSON.stringify({...JSON.parse(row.body),priceCents:3500+i*500}),row.id)));
   }
   async function decorate(order:GateOrder){
     if(order.driverAlertId){const row=await db.prepare("SELECT status FROM whatsapp_outbox WHERE reference=? AND kind IN ('assignment','ready') ORDER BY created_at DESC LIMIT 1").bind(order.driverAlertId).first<{status:string}>();order.driverAlertStatus=row?.status||'not_configured';}
@@ -84,7 +104,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
   async function connectorNotice(stallId:string){
     if(await db.prepare("SELECT id FROM whatsapp_outbox WHERE kind='connector' AND reference=?").bind(stallId).first())return;
     const award=await db.prepare('SELECT a.*,c.phone FROM referral_awards a JOIN connector_contacts c ON c.key=a.connector_key WHERE a.stall_id=?').bind(stallId).first<{connector_key:string;vendor_name:string;phone:string}>();
-    if(!award)return;
+    if(!award||await demoStall(stallId))return;
     const total=await db.prepare('SELECT sum(amount_cents) AS total FROM referral_awards WHERE connector_key=?').bind(award.connector_key).first<{total:number}>();
     await options.meta?.queue('connector',award.phone,stallId,{parameters:[award.vendor_name||'Your referred stall',((total?.total||7500)/100).toFixed(2)]});
   }
@@ -144,6 +164,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         if (payment?.mode !== 'live' || payment.status !== 'succeeded' || payment.amount !== ONBOARDING_CENTS || payment.currency !== 'ZAR') fail(400, 'Payment did not match.');
         const checkout = await db.prepare('SELECT stall_id FROM activation_checkouts WHERE id=?').bind(payment.metadata?.checkoutId ?? '').first<{stall_id: string}>();
         if (!checkout) fail(404, 'Payment reference not found.');
+        if (await demoStall(checkout.stall_id)) return json({ received: true });
         await db.batch([
           db.prepare('UPDATE activation_checkouts SET paid_at=COALESCE(paid_at,?) WHERE id=?').bind(now(), payment.metadata.checkoutId),
           db.prepare('UPDATE stalls SET activated_at=COALESCE(activated_at,?) WHERE id=?').bind(now(), checkout.stall_id),
@@ -176,7 +197,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           await db.prepare("DELETE FROM sessions WHERE hash=? AND role='admin'").bind(await hash(secret)).run();
           return json({ signedOut: true }, 200, { 'Set-Cookie': 'kk_admin=; HttpOnly; Secure; SameSite=Strict; Path=/api/admin; Max-Age=0' });
         }
-        if (path === '/admin' && request.method === 'GET') return json({ referrals:await referralReport(db), whatsapp: options.meta ? await options.meta.overview() : null, stalls: (await db.prepare('SELECT id,phone,name,referral_name,first_order_at,activated_at,payment_reported_at,settings FROM stalls').all()).results, codes: await pendingCodes(db, options.activationKey, now()) });
+        if (path === '/admin' && request.method === 'GET') return json({ referrals:await referralReport(db), whatsapp: options.meta ? await options.meta.overview() : null, stalls: (await db.prepare('SELECT id,phone,name,referral_name,first_order_at,activated_at,payment_reported_at,settings FROM stalls WHERE phone<>?').bind(DEMO_PHONE).all()).results, codes: await pendingCodes(db, options.activationKey, now()) });
         if(path==='/admin/connectors/contact'&&request.method==='POST'){
           const input=await body(request),name=text(input.name),key=name.toLowerCase().replace(/[ \t]/g,''),number=invitationPhone(text(input.phone));
           if(input.verified!==true)fail(400,'Confirm this is the Connector’s WhatsApp number and they agreed to receive earnings updates.');
@@ -256,6 +277,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         }
         if (path === '/admin/code' && request.method === 'POST') {
           const input = await body(request), number = phone(input.phone);
+          if (number===DEMO_PHONE) fail(409,'The demo stall uses its fixed demo code.');
           if (!await db.prepare('SELECT phone FROM login_codes WHERE phone=?').bind(number).first()) fail(404, 'Ask the vendor to request a code first.');
           const current = (await pendingCodes(db, options.activationKey, now())).find(row => row.phone === number);
           if (!current?.code) await makeCode(db, number, options.activationKey, now());
@@ -268,6 +290,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         }
         if (path === '/admin/paid' && request.method === 'POST') {
           const input = await body(request), owner = await stall(text(input.stallId)), plan = stallPlan(owner,now());
+          if(owner.phone===DEMO_PHONE) fail(409,'The demo stall takes no payments.');
           const reference=text(input.reference,100);
           if(input.amountCents!==plan.amountDueCents || !plan.amountDueCents) fail(409,'Check the amount due before confirming payment.');
           const settings:StallSettings=JSON.parse(owner.settings);
@@ -300,6 +323,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
       }
       if (path === '/auth/code' && request.method === 'POST') {
         const input = await body(request), number = phone(input.phone);
+        if (number === DEMO_PHONE) { if (!options.demoCode) fail(403, 'This number is reserved.'); return json({ sent: false, queued: false, demo: true, requestedAt: now() }); }
         await limit(`send:${number}`, 3, 600000);
         await limit(`ip:${request.headers.get('CF-Connecting-IP') ?? 'local'}`, 15, 600000);
         if (options.manualCodes && options.activationKey && options.activationKey.length >= 32) {
@@ -312,11 +336,13 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
       if (path === '/auth/verify' && request.method === 'POST') {
         const input = await body(request), number = phone(input.phone);
         const referralName = typeof input.referral_name === 'string' ? input.referral_name.trim().slice(0,100) : '';
-        if (typeof input.code !== 'string' || !/^\d{4}$/.test(input.code)) fail(400, 'Enter the four-digit code.');
+        const demo = number === DEMO_PHONE;
+        if (typeof input.code !== 'string' || !(demo ? /^\d{4,8}$/ : /^\d{4}$/).test(input.code)) fail(400, 'Enter the four-digit code.');
         await limit(`verify:${number}`, 5, 600000);
-        const verified = options.manualCodes && options.activationKey ? await consumeCode(db, number, input.code, options.activationKey, now()) : await messaging.checkCode(number, input.code);
+        const verified = demo ? Boolean(options.demoCode) && sameSecret(input.code, options.demoCode!) : options.manualCodes && options.activationKey ? await consumeCode(db, number, input.code, options.activationKey, now()) : await messaging.checkCode(number, input.code);
         if (!verified) fail(401, 'That code is incorrect or has expired.');
-        const inserted = await db.prepare('INSERT INTO stalls(id,phone,referral_name) VALUES (?,?,?) ON CONFLICT(phone) DO NOTHING').bind(crypto.randomUUID(), number, referralName).run();
+        if (demo) await resetDemoStall();
+        const inserted = await db.prepare('INSERT INTO stalls(id,phone,referral_name) VALUES (?,?,?) ON CONFLICT(phone) DO NOTHING').bind(crypto.randomUUID(), number, demo ? '' : referralName).run();
         const owner = (await db.prepare('SELECT * FROM stalls WHERE phone=?').bind(number).first<StallRow>())!;
         if (inserted.meta.changes) {
           await db.prepare('UPDATE stalls SET settings=json_patch(settings,?) WHERE id=?').bind(JSON.stringify({ createdAt: now() }), owner.id).run();
@@ -324,6 +350,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           await db.batch(templates.map(([key, name]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)')
             .bind(`${owner.id}-${key}`, owner.id, JSON.stringify({ id: `${owner.id}-${key}`, name, image: `/images/kota-approved-menu.png#${key}`, priceCents: null, shop: 'stall', shopName: 'Stall', enabled: true, extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] }))));
         }
+        if (demo && inserted.meta.changes) await seedDemoStall(owner.id);
         const [savedOwner, savedMenu, cookie] = await Promise.all([stall(owner.id), menu(owner.id), newSession('vendor', owner.id, number)]);
         return json({ role: 'vendor', stall: savedOwner, owner: { stall: { ...savedOwner, is_open: Number(accepting(savedOwner, now())) }, menu: savedMenu } }, 200, { 'Set-Cookie': cookie });
       }
@@ -424,7 +451,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         let ownerSession = session.role === 'vendor' ? session : null;
         try { if (!ownerSession) { const saved = await readSession(request, 'kk_vendor'); if (saved.role === 'vendor') ownerSession = saved; } } catch { /* no saved owner */ }
         const owner = ownerSession?.stall_id ? await stall(ownerSession.stall_id) : null;
-        return json({ role: session.role, stallId: session.stall_id, ownerAvailable: Boolean(owner), ownerStallId: owner?.id ?? null, ownerSetupComplete: Boolean(owner && JSON.parse(owner.settings).setupStep >= 9) });
+        return json({ role: session.role, stallId: session.stall_id, ownerAvailable: Boolean(owner), ownerStallId: owner?.id ?? null, ownerSetupComplete: Boolean(owner && JSON.parse(owner.settings).setupStep >= 9), demo: owner?.phone === DEMO_PHONE });
       }
       if(path==='/customer/recover' && request.method==='POST') {
         if(session.role!=='customer')fail(403,'Open customer checkout first.');
@@ -557,6 +584,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           const names = items.map(item => item.name).join(', ');
           if (!names || input.enabled === false) return json({ saved: true });
           const message = `${owner.name} put your ${names} on her menu. Her delivery guy buys from you with cash, like any customer. Reply STOP if you'd rather not.`;
+          if (owner.phone === DEMO_PHONE) return json({ saved: true, sent: false });
           try { if (!messaging.notifyShop) throw new Error(); await messaging.notifyShop(number, owner.name, names); return json({ saved: true, sent: true }); }
           catch { return json({ saved: true, sent: false, link: `https://wa.me/${number.slice(1)}?text=${encodeURIComponent(message)}` }); }
         }
@@ -594,6 +622,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         });
         if (path === '/vendor/pay' && request.method === 'POST') fail(503, 'Arrange payment with Thandi. Automatic subscriptions are not connected.');
         if (path === '/vendor/activation' && request.method === 'POST') {
+          if (owner.phone === DEMO_PHONE) return json({ message: 'The demo stall takes no payments.' });
           await db.prepare('UPDATE stalls SET payment_reported_at=? WHERE id=?').bind(now(), owner.id).run();
           return json({ message: 'Thandi will confirm when your payment arrives.' });
         }
@@ -715,7 +744,8 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         if (JSON.parse(saved.body).id === order.id) {
           try{await memory.remember(session.hash,order.customerName,order.customerPhone,order.gateNote);}catch{console.warn('Order saved; customer details could not be remembered.');}
           try {
-            if (options.meta) await options.meta.queue('order', record.phone, order.id);
+            if (record.phone === DEMO_PHONE) { /* demo stall: no WhatsApp */ }
+            else if (options.meta) await options.meta.queue('order', record.phone, order.id);
             else await messaging.notifyOrder?.(record.phone, order.customerName.split(' ')[0]);
           } catch { console.warn('Order saved; WhatsApp alert could not be queued.'); }
         }
@@ -799,7 +829,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             : await db.prepare('UPDATE gate_orders SET body=?,version=version+1 WHERE id=? AND version=?').bind(JSON.stringify(order), order.id, row.version).run();
           if (!saved.meta.changes) fail(409, 'This order changed. Refresh and try again.');
           if(action==='cancel'){
-            try {const owner=await stall(order.stallId);await options.meta?.queue('cancellation',owner.phone,order.id+':'+(row.version+1),orderNotice('cancellation',order,owner.name));}catch{console.error('Order updated; WhatsApp notification could not be queued.');}
+            try {const owner=await stall(order.stallId);if(owner.phone!==DEMO_PHONE)await options.meta?.queue('cancellation',owner.phone,order.id+':'+(row.version+1),orderNotice('cancellation',order,owner.name));}catch{console.error('Order updated; WhatsApp notification could not be queued.');}
           }
           if(order.riderPhone&&['assign','ready','resend'].includes(action||''))try{await driverNotice(order,order.state==='ready'?'ready':'assignment');}catch{console.error('Order saved; delivery alert could not be queued.');}
           return json({ order, money: orderMoney(order) });

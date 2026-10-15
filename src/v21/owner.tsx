@@ -28,6 +28,7 @@ function Login() {
   const fromCodeLink=/^\+27\d{9}$/.test(requestedNumber);
   const contact=useResource<{supportPhone:string}>('/config');
   const [number,setNumber]=useState(fromCodeLink?requestedNumber:sessionStorage.getItem('kasi-login-number')||''),[code,setCode]=useState('');
+  const [demo,setDemo]=useState(()=>/^(\+27|0)820000000$/.test(number.replace(/[\s()-]/g,'')));
   const [sent,setSent]=useState(fromCodeLink||sessionStorage.getItem('kasi-login-waiting')==='yes');
   const [requestedAt,setRequestedAt]=useState(Number(sessionStorage.getItem('kasi-login-requested-at'))||0);
   const [requestLink,setRequestLink]=useState(sessionStorage.getItem('kasi-login-link')||'');
@@ -35,10 +36,10 @@ function Login() {
   useEffect(()=>{sessionStorage.setItem('kasi-login-number',number);sessionStorage.setItem('kasi-login-waiting',sent?'yes':'no');sessionStorage.setItem('kasi-login-link',requestLink);sessionStorage.setItem('kasi-login-requested-at',String(requestedAt));},[number,sent,requestLink,requestedAt]);
   async function requestCode() {
     const reply=await openWhatsAppAction(async()=>{const result=await api('/auth/code','POST',{phone:number});return {...result,link:result.requestLink};});
-    setRequestedAt(reply.requestedAt||0);setRequestLink(reply.requestLink||'');setSent(true);
+    setDemo(Boolean(reply.demo));setRequestedAt(reply.requestedAt||0);setRequestLink(reply.requestLink||'');setSent(true);
     if(reply.popupBlocked&&reply.requestLink) window.location.assign(reply.requestLink);
   }
-  return <><h1>{sent?'Your WhatsApp code':'Your number'}</h1><p>{sent?'Your login code arrives on WhatsApp. Thandi will reply to the number below. Open WhatsApp, tap Send on the message, then type the code here.':'Your login code arrives on WhatsApp, not by SMS. Enter the WhatsApp number you will use to manage your stall.'}</p>
+  return <><h1>{demo?'Demo stall':sent?'Your WhatsApp code':'Your number'}</h1><p>{demo?'Enter the demo code you were given. Nothing is sent on WhatsApp.':sent?'Your login code arrives on WhatsApp. Thandi will reply to the number below. Open WhatsApp, tap Send on the message, then type the code here.':'Your login code arrives on WhatsApp, not by SMS. Enter the WhatsApp number you will use to manage your stall.'}</p>
     <form className="v-stack" onSubmit={event=>{event.preventDefault();void task.run(async()=>{
       if(!sent) return requestCode();
       const result=await api('/auth/verify','POST',{phone:number,code,referral_name:referralName});
@@ -48,16 +49,16 @@ function Login() {
     });}}>
       <label>WhatsApp number<input required type="tel" autoComplete="tel" value={number} disabled={sent||task.busy} onChange={event=>{setNumber(event.target.value);task.clearError();}}/></label>
       <label>Who sent you? (referral name)<input maxLength={100} value={referralName} onChange={event=>setReferralName(event.target.value)}/></label>
-      {sent&&<section className="v-card" role="status"><strong>{requestedAt?'Request sent to Thandi’s admin inbox at '+new Date(requestedAt).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',timeZone:'Africa/Johannesburg'})+'.':'Your code request is waiting.'}</strong><p>Tap Send in WhatsApp so Thandi receives your request. Your request is also saved in admin. Thandi replies with your code, valid for 10 minutes from when she creates it.</p></section>}
-      {sent&&<label>Four-digit code<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4}" maxLength={4} value={code} disabled={task.busy} onChange={event=>{setCode(event.target.value);task.clearError();}}/></label>}
+      {sent&&!demo&&<section className="v-card" role="status"><strong>{requestedAt?'Request sent to Thandi’s admin inbox at '+new Date(requestedAt).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',timeZone:'Africa/Johannesburg'})+'.':'Your code request is waiting.'}</strong><p>Tap Send in WhatsApp so Thandi receives your request. Your request is also saved in admin. Thandi replies with your code, valid for 10 minutes from when she creates it.</p></section>}
+      {sent&&<label>{demo?'Demo code':'Four-digit code'}<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4,8}" maxLength={8} value={code} disabled={task.busy} onChange={event=>{setCode(event.target.value);task.clearError();}}/></label>}
       <ErrorText text={task.error}/>
       {task.error&&!sent&&<p>Your request could not be confirmed. Check your connection and retry below.</p>}
       {task.busy&&<p role="status">{sent?'Checking your code and opening your stall…':'Sending your request to Thandi’s admin inbox…'}</p>}
       <button className="v-button" disabled={task.busy}>{task.busy?(sent?'Opening your stall…':'Sending request…'):sent?'Continue':task.error?'Retry request':'Get my code on WhatsApp'}</button>
-      {sent&&<><button type="button" className="v-link" disabled={task.busy} onClick={()=>{void task.run(requestCode);}}>Request code again</button>
+      {sent&&<>{!demo&&<button type="button" className="v-link" disabled={task.busy} onClick={()=>{void task.run(requestCode);}}>Request code again</button>}
         <button type="button" className="v-link" disabled={task.busy} onClick={()=>{setSent(false);setCode('');setRequestedAt(0);task.clearError();}}>Use another number</button></>}
-      {sent&&(requestLink||contact.data?.supportPhone)&&<a className="v-link" href={requestLink||wa(contact.data?.supportPhone||'','Hi Thandi, I need my Kasi Move login code for '+number+'. Please check my request.')} target="_blank" rel="noreferrer">Open WhatsApp again</a>}
-      {sent&&<p className="muted">If WhatsApp did not open, tap Open WhatsApp again, then press Send in WhatsApp. Saving the request in admin does not send a WhatsApp message.</p>}
+      {sent&&!demo&&(requestLink||contact.data?.supportPhone)&&<a className="v-link" href={requestLink||wa(contact.data?.supportPhone||'','Hi Thandi, I need my Kasi Move login code for '+number+'. Please check my request.')} target="_blank" rel="noreferrer">Open WhatsApp again</a>}
+      {sent&&!demo&&<p className="muted">If WhatsApp did not open, tap Open WhatsApp again, then press Send in WhatsApp. Saving the request in admin does not send a WhatsApp message.</p>}
     </form></>;
 }
 export function VendorLogin() { return <Frame><Login /></Frame>; }
