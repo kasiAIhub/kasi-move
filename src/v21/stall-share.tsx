@@ -1,14 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api, appOrigin, useTask, wa } from './client';
 import { ErrorText } from './common';
+import { stallShareMessage, type ShareStall } from './share-text';
 
-export interface ShareStall { id: string; name: string; takesCard: boolean; delivery: boolean; deliveryName?:string }
-export function stallShareMessage(stall: ShareStall) {
-  return 'Order here: '+appOrigin()+'/stall/'+stall.id+'\n\n*'+(stall.name.trim()||'Our stall')+'* — official digital menu.\n'+
-    (stall.delivery ? 'Collect from our stall or get delivery to your gate.\nPay on collection or at your gate' : 'Order online and collect from our stall.\nPay on collection')+
-    (stall.takesCard ? ': cash or card payments.' : ': cash.')+
-    (stall.delivery ? (stall.deliveryName ? '\nOur delivery guy is '+stall.deliveryName+'.'+(stall.takesCard?' He brings a speed point machine.':'') : stall.takesCard?'\nOur delivery person brings a speed point machine.':'') : '');
-}
+export type { ShareStall };
 function wrap(context: CanvasRenderingContext2D, text: string, y: number, size = 36) {
   context.font="600 "+size+"px Arial";
   let line='';
@@ -20,7 +15,7 @@ function wrap(context: CanvasRenderingContext2D, text: string, y: number, size =
 }
 export function StallShare({ stall, onDone }: { stall: ShareStall; onDone?:()=>void }) {
   const [open,setOpen]=useState(false),[poster,setPoster]=useState<{url:string;file:File}|null>(null),[error,setError]=useState('');
-  const task=useTask(),message=stallShareMessage(stall),link='https://move.kasiaihub.com/stall/'+stall.id;
+  const task=useTask(),message=stallShareMessage(stall,appOrigin()),link=appOrigin()+'/stall/'+stall.id;
   useEffect(()=>{
     if(!open)return;
     let active=true,objectUrl='';

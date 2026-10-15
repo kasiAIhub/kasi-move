@@ -703,7 +703,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           return json({ settings });
         }
         if (path === '/vendor/activation' && request.method === 'GET') return json({
-          online: false, takesCard: Boolean(owner.takes_card), delivery: Boolean(owner.rider_phone) && JSON.parse(owner.settings).deliveryEnabled!==false, stallName: owner.name, deliveryName:(await db.prepare("SELECT name FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(owner.id,owner.rider_phone).first<{name:string}>())?.name, plan: stallPlan(owner,now()), stallId: owner.id,
+          online: false, takesCard: Boolean(owner.takes_card), delivery: Boolean(owner.rider_phone) && JSON.parse(owner.settings).deliveryEnabled!==false, stallName: owner.name, hours: owner.hours, deliveryName:(await db.prepare("SELECT name FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(owner.id,owner.rider_phone).first<{name:string}>())?.name, plan: stallPlan(owner,now()), stallId: owner.id,
           paymentUrl: null,
           instructions: options.paymentInstructions ?? null, activated: owner.activated_at !== null, reported: owner.payment_reported_at !== null,
         });

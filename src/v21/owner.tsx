@@ -19,7 +19,7 @@ export async function saveItem(item: GateItem, change: Partial<GateItem> & { sol
   return api('/vendor/menu', 'PUT', { ...item, soldOutToday: item.soldOutDate === day(Date.now()), ...change });
 }
 function Share({data,onDone}:{data:OwnerData;onDone?:()=>void}) {
-  return <StallShare stall={{id:data.stall.id,name:data.stall.name,takesCard:Boolean(data.stall.takes_card),delivery:Boolean(data.stall.rider_phone)&&settingsOf(data.stall).deliveryEnabled!==false,deliveryName:data.team?.find(m=>m.role==='rider'&&m.phone===data.stall.rider_phone)?.name||settingsOf(data.stall).riderName}} onDone={onDone}/>;
+  return <StallShare stall={{id:data.stall.id,name:data.stall.name,hours:data.stall.hours,takesCard:Boolean(data.stall.takes_card),delivery:Boolean(data.stall.rider_phone)&&settingsOf(data.stall).deliveryEnabled!==false,deliveryName:data.team?.find(m=>m.role==='rider'&&m.phone===data.stall.rider_phone)?.name||settingsOf(data.stall).riderName}} onDone={onDone}/>;
 }
 function Login({existing=false}:{existing?:boolean}) {
   const requestedNumber=new URLSearchParams(window.location.search).get('phone')||'';
@@ -203,7 +203,7 @@ export function More() {
   </Frame>;
 }
 export function KeepStall() {
-  const resource=useResource<{stallName:string;takesCard:boolean;delivery:boolean;deliveryName?:string;stallId:string;plan:ReturnType<typeof stallPlan>;reported:boolean;instructions:string|null}>('/vendor/activation',true),task=useTask();
+  const resource=useResource<{stallName:string;hours?:string;takesCard:boolean;delivery:boolean;deliveryName?:string;stallId:string;plan:ReturnType<typeof stallPlan>;reported:boolean;instructions:string|null}>('/vendor/activation',true),task=useTask();
   const config=useResource<{supportPhone:string;cashSendNumber:string;bankDetails:string}>('/config');
   const orders=useResource<{orders:GateOrder[]}>('/orders');
   if(!resource.data||!config.data) return <Loading error={resource.error||config.error}/>;
@@ -229,7 +229,7 @@ export function KeepStall() {
     <ReferralShare name={data.stallName}/><section className="v-card v-stack"><h2>Kasi Move app QR</h2><p>Scan to open Kasi Move and start a stall. Use this app QR code in your videos.</p>
       <img src="/images/kasi-move-qr.svg" alt="QR code for https://move.kasiaihub.com" style={{width:240,maxWidth:'100%',alignSelf:'center'}}/>
       <a className="v-button" href="/images/kasi-move-qr.png" download="kasi-move-qr.png">Download app QR code</a><p>move.kasiaihub.com</p>
-      <p>For customers ordering from your own stall:</p><StallShare stall={{id:data.stallId,name:data.stallName,takesCard:data.takesCard,delivery:data.delivery,deliveryName:data.deliveryName}}/>
+      <p>For customers ordering from your own stall:</p><StallShare stall={{id:data.stallId,name:data.stallName,hours:data.hours,takesCard:data.takesCard,delivery:data.delivery,deliveryName:data.deliveryName}}/>
     </section>
   </Frame>;
 }
