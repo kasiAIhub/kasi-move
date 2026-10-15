@@ -1,5 +1,6 @@
 import {TeamManager,TeamInvite,AssistantKitchen} from './team';
 import {TeamAccess} from './team-access';
+import {ClaimStall} from './claim';
 import type { ReactNode } from 'react';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { DraftProvider, IdentityProvider, settingsOf, useIdentity, useResource, type OwnerData } from './client';
@@ -35,7 +36,7 @@ export default function App() {
   return <BrowserRouter><IdentityProvider><DraftProvider><Routes>
     <Route path="/admin" element={<Admin />} />
     <Route path="/team/access" element={<TeamAccess/>}/>
-    <Route path="/login" element={<VendorLogin />} /><Route path="/verify" element={<VendorVerify />} />
+    <Route path="/claim" element={<ClaimStall />} /><Route path="/login" element={<VendorLogin />} /><Route path="/verify" element={<VendorVerify />} />
     <Route path="/" element={<Entry />} /><Route path="/setup/:step" element={<Setup />} />
     <Route path="/stall/:stallId" element={<StallMenu />} /><Route path="/stall/:stallId/kota/:itemId" element={<Kota />} />
     <Route path="/stall/:stallId/next-door" element={<NextDoorCustomer />} /><Route path="/stall/:stallId/order" element={<Order />} />

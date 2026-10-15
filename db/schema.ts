@@ -86,3 +86,8 @@ export const connectorContacts=sqliteTable('connector_contacts',{
 export const photoEdits=sqliteTable('photo_edits',{
  id:text('id').primaryKey(),stallId:text('stall_id').notNull().references(()=>stalls.id),itemId:text('item_id').notNull(),original:text('original').notNull(),image:text('image').notNull(),settings:text('settings').notNull(),createdAt:integer('created_at').notNull(),
 });
+
+export const stallClaims = sqliteTable('stall_claims', {
+  hash: text('hash').primaryKey(), stallId: text('stall_id').notNull().references(() => stalls.id),
+  expiresAt: integer('expires_at').notNull(), usedAt: integer('used_at'),
+}, table => [index('stall_claims_stall').on(table.stallId)]);

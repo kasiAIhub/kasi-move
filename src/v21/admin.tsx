@@ -1,4 +1,5 @@
 import {AdminPhotos} from './photos';
+import {Concierge} from './concierge';
 import {Connectors,type Referrals} from './connectors';
 import {AdminCodeSettings,AddVendor,VendorTools,AdminQr} from './admin-tools';
 import { useEffect, useState } from 'react';
@@ -56,6 +57,7 @@ function AdminSigned({ initialError }: { initialError: string }) {
       <button className="v-link" onClick={()=>{void task.run(async()=>{await api('/admin/logout','POST',{});setSignedOut(true);resource.setData(null);});}}>Sign out of admin</button>
       <AdminCodeSettings isSet={Boolean(resource.data.adminCodeSet)} reload={resource.reload}/>
       <AdminQr/>
+      <Concierge/>
       <AddVendor reload={resource.reload}/>
       <p>{resource.data.whatsapp?.configured ? 'Create a code to request WhatsApp delivery through Meta. Check the message log below for its result. Manual sending remains available.' : 'Find the number from the WhatsApp request, tap Send code on WhatsApp, then tap Send in WhatsApp.'}</p>
       <label>Find a WhatsApp number<input type="tel" value={search} onChange={event=>setSearch(event.target.value)} placeholder="081 234 5678" /></label>

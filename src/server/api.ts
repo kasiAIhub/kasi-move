@@ -15,8 +15,8 @@ import { hoursRange, nextOpen, scheduleOpen } from './hours';
 import { requestCode, makeCode, consumeCode, pendingCodes, digest } from './private-admin';
 import { isAlcoholName, productImage } from './next-door';
 import { verifyYoco } from './payments';
-import { stallPlan, nextMonth, ONBOARDING_CENTS, hasFoodPhotos } from './plan';
-import { slugBase, slugCandidate } from './slug';
+import { stallPlan, nextMonth, ONBOARDING_CENTS, hasFoodPhotos, PHOTO_GATE_MESSAGE } from './plan';
+import { slugBase, slugCandidate, stallPath } from './slug';
 
 interface Session { hash: string; role: 'vendor' | 'customer' | 'rider' | 'assistant'; stall_id: string | null; phone: string | null }
 interface OrderRow { id: string; stall_id: string; customer_hash: string; body: string; version: number }
@@ -357,6 +357,75 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           const number = phone(input.phone);
           return json({ cleared: (await db.prepare('DELETE FROM login_codes WHERE phone=?').bind(number).run()).meta.changes });
         }
+        if (path === '/admin/concierge' && request.method === 'GET') {
+          const rows = (await db.prepare("SELECT id FROM stalls WHERE json_extract(settings,'$.concierge')=1 AND phone<>? ORDER BY rowid DESC").bind(DEMO_PHONE).all<{ id: string }>()).results;
+          const list = [];
+          for (const row of rows) { const owner = await stall(row.id), items = (await menu(owner.id)).filter(item => item.shop === 'stall'); list.push({ id: owner.id, name: owner.name, town: owner.town, phone: owner.phone, slug: owner.slug ?? null, items: items.length, photos: items.filter(item => item.image).length, ready: (JSON.parse(owner.settings).setupStep ?? 0) >= 9 }); }
+          return json({ stalls: list });
+        }
+        if (path === '/admin/concierge/stall' && request.method === 'POST') {
+          const input = await body(request), name = text(input.name, 100), town = text(input.town, 100), hours = text(input.hours);
+          if (!name || !town) fail(400, 'Add a stall name and town.');
+          if (!hoursRange(hours)) fail(400, 'Use hours like 08:00–21:00.');
+          const number = phone(input.phone);
+          if (number === DEMO_PHONE) fail(409, 'That number is reserved for the demo stall.');
+          if (await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(number).first()) fail(409, 'A stall already uses this number.');
+          const id = crypto.randomUUID(), settings = { createdAt: now(), concierge: true, setupStep: 5, deliveryEnabled: false };
+          await db.prepare('INSERT INTO stalls(id,phone,name,town,hours,takes_card,referral_name,settings) VALUES (?,?,?,?,?,?,?,?)').bind(id, number, name, town, hours, input.takesCard === true ? 1 : 0, '', JSON.stringify(settings)).run();
+          await stall(id);
+          return json({ created: true, stallId: id });
+        }
+        const conciergePath = path.match(/^\/admin\/concierge\/stall\/([^/]+)(?:\/(menu|photo|ready|claim))?(?:\/([^/]+))?$/);
+        if (conciergePath) {
+          const target = await stall(conciergePath[1]);
+          if (target.phone === DEMO_PHONE || JSON.parse(target.settings).concierge !== true) fail(409, 'This is not a stall set up by hand.');
+          const action = conciergePath[2];
+          if (!action && request.method === 'GET') return json({ stall: target, menu: await menu(target.id), ready: (JSON.parse(target.settings).setupStep ?? 0) >= 9 });
+          if (action === 'menu' && request.method === 'PUT') {
+            const input = await body(request), itemName = text(input.name, 100);
+            if (!itemName) fail(400, 'Add the food name.');
+            if (isAlcoholName(itemName)) fail(400, 'Alcohol is not available.');
+            const id = typeof input.id === 'string' && input.id ? text(input.id, 80) : crypto.randomUUID();
+            const existing = await db.prepare('SELECT stall_id,body FROM menu WHERE id=?').bind(id).first<{ stall_id: string; body: string }>();
+            if (existing && existing.stall_id !== target.id) fail(403, 'This item belongs to another stall.');
+            const before = existing ? JSON.parse(existing.body) as GateItem : null;
+            const item: GateItem = { id, name: itemName, priceCents: input.priceCents === null || input.priceCents === undefined ? null : cents(input.priceCents), shop: 'stall', shopName: target.name, enabled: input.enabled !== false, alcohol: false, ...(before?.image ? { image: before.image } : {}) };
+            await db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body WHERE menu.stall_id=excluded.stall_id').bind(id, target.id, JSON.stringify(item)).run();
+            return json({ item });
+          }
+          if (action === 'menu' && request.method === 'DELETE' && conciergePath[3]) { await db.prepare('DELETE FROM menu WHERE id=? AND stall_id=?').bind(conciergePath[3], target.id).run(); return json({ removed: true }); }
+          if (action === 'photo' && request.method === 'POST' && conciergePath[3]) {
+            if (!options.upload) fail(503, 'Photo uploads are not connected yet.');
+            const type = request.headers.get('content-type') ?? '';
+            if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) fail(400, 'Choose a JPG, PNG or WebP photo.');
+            const bytes = await request.arrayBuffer();
+            if (bytes.byteLength > 5 * 1024 * 1024 || !bytes.byteLength) fail(413, 'Choose a photo smaller than 5 MB.');
+            const row = await db.prepare('SELECT body FROM menu WHERE id=? AND stall_id=?').bind(conciergePath[3], target.id).first<{ body: string }>();
+            if (!row) fail(404, 'Item not found.');
+            const key = `${target.id}/${crypto.randomUUID()}`;
+            await options.upload(key, bytes, type);
+            const item = { ...JSON.parse(row!.body), image: `/photos/${key}` };
+            await db.prepare('UPDATE menu SET body=? WHERE id=? AND stall_id=?').bind(JSON.stringify(item), item.id, target.id).run();
+            return json({ item }, 201);
+          }
+          if (action === 'ready' && request.method === 'POST') {
+            const items = await menu(target.id);
+            if (!items.some(item => item.shop === 'stall' && item.enabled)) fail(409, 'Add at least one food item first.');
+            if (items.some(item => item.shop === 'stall' && item.enabled && item.priceCents === null)) fail(409, 'Add a price for every item first.');
+            if (!hasFoodPhotos(items)) fail(409, PHOTO_GATE_MESSAGE);
+            await db.prepare("UPDATE stalls SET settings=json_set(settings,'$.setupStep',9) WHERE id=?").bind(target.id).run();
+            return json({ ready: true });
+          }
+          if (action === 'claim' && request.method === 'POST') {
+            if ((JSON.parse(target.settings).setupStep ?? 0) < 9) fail(409, 'Finish the stall first: every item needs a price and a photo.');
+            const secret = token(), expiresAt = now() + 14 * 86400000;
+            await db.batch([db.prepare('DELETE FROM stall_claims WHERE stall_id=?').bind(target.id), db.prepare('INSERT INTO stall_claims(hash,stall_id,expires_at) VALUES (?,?,?)').bind(await hash(secret), target.id, expiresAt)]);
+            const link = url.origin + '/claim#token=' + secret, number = target.phone.replace(/^\+/, '');
+            const message = 'Your Kasi Move stall ' + target.name + ' is ready. Tap to open it: ' + link + '\nAfter that you can always sign in with this WhatsApp number at ' + url.origin + '/login. Your food link for customers: ' + url.origin + stallPath(target);
+            return json({ link, expiresAt, whatsapp: 'https://wa.me/' + number + '?text=' + encodeURIComponent(message), message });
+          }
+          fail(405, 'Not supported.');
+        }
         if (path === '/admin/code' && request.method === 'POST') {
           const input = await body(request), number = phone(input.phone);
           if (number===DEMO_PHONE) fail(409,'The demo stall uses its fixed demo code.');
@@ -449,6 +518,19 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         if (demo && inserted.meta.changes) await seedDemoStall(owner.id);
         const [savedOwner, savedMenu, cookie] = await Promise.all([stall(owner.id), menu(owner.id), newSession('vendor', owner.id, number)]);
         return json({ role: 'vendor', stall: savedOwner, owner: { stall: { ...savedOwner, is_open: Number(accepting(savedOwner, now())) }, menu: savedMenu } }, 200, { 'Set-Cookie': cookie });
+      }
+
+      if (path === '/auth/claim' && request.method === 'POST') {
+        await limit('claim:' + (request.headers.get('CF-Connecting-IP') ?? 'local'), 20, 600000);
+        const input = await body(request), value = text(input.token, 64);
+        if (!/^[a-f0-9]{64}$/.test(value)) fail(401, 'Ask for a new link to your stall.');
+        const row = await db.prepare('SELECT stall_id FROM stall_claims WHERE hash=? AND expires_at>?').bind(await hash(value), now()).first<{ stall_id: string }>();
+        if (!row) fail(401, 'This link has expired. Ask for a new one, or sign in with your WhatsApp number.');
+        const owner = await stall(row!.stall_id);
+        if (owner.phone === DEMO_PHONE) fail(409, 'Not available.');
+        await db.prepare('UPDATE stall_claims SET used_at=COALESCE(used_at,?) WHERE hash=?').bind(now(), await hash(value)).run();
+        const [savedMenu, cookie] = await Promise.all([menu(owner.id), newSession('vendor', owner.id, owner.phone)]);
+        return json({ role: 'vendor', stall: owner, owner: { stall: { ...owner, is_open: Number(accepting(owner, now())) }, menu: savedMenu } }, 200, { 'Set-Cookie': cookie });
       }
 
       if(path==='/auth/team-access'&&request.method==='POST'){
