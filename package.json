@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:transaction": "vitest run tests/v3-acceptance.test.ts tests/v3-store.test.ts",
-    "test:v3": "npm test && npm run test:e2e"
+    "test:v3": "npm test && npm run test:e2e",
+    "deploy:cloudflare": "npm run build && rm -f dist/client/_redirects && wrangler deploy"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

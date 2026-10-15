@@ -6,7 +6,7 @@ import { directoryHtml, directoryJson, listedStall, listedStalls, llmsTxt, robot
 import { apiConfiguration, type Configuration } from './config';
 interface Environment extends WhatsAppConfig, Configuration {
   DB: Database;
-  PHOTOS: {
+  PHOTOS?: {
     list(options: {prefix: string; limit: number}): Promise<{objects: {key: string}[]}>;
     delete(keys: string[]): Promise<void>;
     put(key: string, bytes: ArrayBuffer, options: { httpMetadata: { contentType: string } }): Promise<unknown>;
@@ -20,7 +20,7 @@ interface Environment extends WhatsAppConfig, Configuration {
 declare const APP_HTML: string;
 export default {
   async fetch(request: Request, env: Environment, ctx: { waitUntil(job: Promise<unknown>): void }): Promise<Response> {
-    const url = new URL(request.url);
+    const url = new URL(request.url), photos = env.PHOTOS;
     if (request.method === 'GET' && url.hostname === 'example.com' && !url.pathname.startsWith('/api/') && !/\.[a-z0-9]+$/i.test(url.pathname)) {
       url.hostname = 'move.kasiaihub.com';
       return Response.redirect(url.toString(), 302);
@@ -39,20 +39,21 @@ export default {
       return createApi(env.DB, whatsapp(env), Date.now, {
         ...apiConfiguration(env),
         meta: metaWhatsApp(env.DB, env, job => ctx.waitUntil(job)),
-        deletePhotos: async stallId => {
+        deletePhotos: !photos ? undefined : async stallId => {
           const prefix = `${stallId}/`;
           for (;;) {
-            const page = await env.PHOTOS.list({ prefix, limit: 1000 });
+            const page = await photos.list({ prefix, limit: 1000 });
             if (!page.objects.length) break;
             if (page.objects.some(object => !object.key.startsWith(prefix))) throw new Error('Photo scope mismatch');
-            await env.PHOTOS.delete(page.objects.map(object => object.key));
+            await photos.delete(page.objects.map(object => object.key));
           }
         },
-        upload: async (key, bytes, contentType) => { await env.PHOTOS.put(key, bytes, { httpMetadata: { contentType } }); },
+        upload: !photos ? undefined : async (key, bytes, contentType) => { await photos.put(key, bytes, { httpMetadata: { contentType } }); },
       })(request);
     }
     if (url.pathname.startsWith('/photos/')) {
-      const object = await env.PHOTOS.get(url.pathname.slice(8));
+      if (!photos) return new Response('Photo not found', { status: 404 });
+      const object = await photos.get(url.pathname.slice(8));
       return object ? new Response(object.body, { headers: { 'Content-Type': object.httpMetadata?.contentType ?? 'image/jpeg', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'public,max-age=31536000,immutable' } }) : new Response('Photo not found', { status: 404 });
     }
     if (env.ASSETS && /\.[a-z0-9]+$/i.test(url.pathname)) return env.ASSETS.fetch(request);
