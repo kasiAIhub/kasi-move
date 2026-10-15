@@ -341,6 +341,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         await limit(`verify:${number}`, 5, 600000);
         const verified = demo ? Boolean(options.demoCode) && sameSecret(input.code, options.demoCode!) : options.manualCodes && options.activationKey ? await consumeCode(db, number, input.code, options.activationKey, now()) : await messaging.checkCode(number, input.code);
         if (!verified) fail(401, 'That code is incorrect or has expired.');
+        if (input.existing === true && !demo && !await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(number).first()) fail(404, 'There is no stall under this number. Check the number, or open a new stall.');
         if (demo) await resetDemoStall();
         const inserted = await db.prepare('INSERT INTO stalls(id,phone,referral_name) VALUES (?,?,?) ON CONFLICT(phone) DO NOTHING').bind(crypto.randomUUID(), number, demo ? '' : referralName).run();
         const owner = (await db.prepare('SELECT * FROM stalls WHERE phone=?').bind(number).first<StallRow>())!;

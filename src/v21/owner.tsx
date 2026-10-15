@@ -21,7 +21,7 @@ export async function saveItem(item: GateItem, change: Partial<GateItem> & { sol
 function Share({data,onDone}:{data:OwnerData;onDone?:()=>void}) {
   return <StallShare stall={{id:data.stall.id,name:data.stall.name,takesCard:Boolean(data.stall.takes_card),delivery:Boolean(data.stall.rider_phone)&&settingsOf(data.stall).deliveryEnabled!==false,deliveryName:data.team?.find(m=>m.role==='rider'&&m.phone===data.stall.rider_phone)?.name||settingsOf(data.stall).riderName}} onDone={onDone}/>;
 }
-function Login() {
+function Login({existing=false}:{existing?:boolean}) {
   const requestedNumber=new URLSearchParams(window.location.search).get('phone')||'';
   const [referralName,setReferralName]=useState(()=>new URLSearchParams(window.location.search).get('ref')??sessionStorage.getItem('kasi-referral-name')??'');
   useEffect(()=>{sessionStorage.setItem('kasi-referral-name',referralName);},[referralName]);
@@ -42,7 +42,7 @@ function Login() {
   return <><h1>{demo?'Demo stall':sent?'Your WhatsApp code':'Your number'}</h1><p>{demo?'Enter the demo code you were given. Nothing is sent on WhatsApp.':sent?'Your login code arrives on WhatsApp. Thandi will reply to the number below. Open WhatsApp, tap Send on the message, then type the code here.':'Your login code arrives on WhatsApp, not by SMS. Enter the WhatsApp number you will use to manage your stall.'}</p>
     <form className="v-stack" onSubmit={event=>{event.preventDefault();void task.run(async()=>{
       if(!sent) return requestCode();
-      const result=await api('/auth/verify','POST',{phone:number,code,referral_name:referralName});
+      const result=await api('/auth/verify','POST',{phone:number,code,referral_name:referralName,existing});
       identity.acceptVendor(result.owner);sessionStorage.removeItem('kasi-login-waiting');sessionStorage.removeItem('kasi-referral-name');
       const step=sessionStorage.getItem('kasi-setup-replay')==='1'?3:settingsOf(result.stall).setupStep??3;
       navigate(step>=9?'/kitchen':'/setup/'+step);
@@ -52,6 +52,7 @@ function Login() {
       {sent&&!demo&&<section className="v-card" role="status"><strong>{requestedAt?'Request sent to Thandi’s admin inbox at '+new Date(requestedAt).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',timeZone:'Africa/Johannesburg'})+'.':'Your code request is waiting.'}</strong><p>Tap Send in WhatsApp so Thandi receives your request. Your request is also saved in admin. Thandi replies with your code, valid for 10 minutes from when she creates it.</p></section>}
       {sent&&<label>{demo?'Demo code':'Four-digit code'}<input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{4,8}" maxLength={8} value={code} disabled={task.busy} onChange={event=>{setCode(event.target.value);task.clearError();}}/></label>}
       <ErrorText text={task.error}/>
+      {task.error&&/no stall under this number/i.test(task.error)&&<Link className="v-button secondary" to="/setup/1?fresh=1">Open a new stall</Link>}
       {task.error&&!sent&&<p>Your request could not be confirmed. Check your connection and retry below.</p>}
       {task.busy&&<p role="status">{sent?'Checking your code and opening your stall…':'Sending your request to Thandi’s admin inbox…'}</p>}
       <button className="v-button" disabled={task.busy}>{task.busy?(sent?'Opening your stall…':'Sending request…'):sent?'Continue':task.error?'Retry request':'Get my code on WhatsApp'}</button>
@@ -61,8 +62,8 @@ function Login() {
       {sent&&!demo&&<p className="muted">If WhatsApp did not open, tap Open WhatsApp again, then press Send in WhatsApp. Saving the request in admin does not send a WhatsApp message.</p>}
     </form></>;
 }
-export function VendorLogin() { return <Frame><Login /></Frame>; }
-export function VendorVerify() { return <Frame><Login /></Frame>; }
+export function VendorLogin() { return <Frame><Login existing /></Frame>; }
+export function VendorVerify() { return <Frame><Login existing /></Frame>; }
 export function Setup() {
   const step = Number(useParams().step || 1), identity = useIdentity();
   useEffect(() => { if(step===1&&new URLSearchParams(window.location.search).get('fresh')==='1'){for(const key of ['kasi-login-number','kasi-login-waiting','kasi-login-link','kasi-login-requested-at','kasi-login-message','kasi-setup-replay','kasi-order-draft','kasi-referral-name','kasi-invite-result-rider','kasi-invite-result-assistant'])sessionStorage.removeItem(key);}

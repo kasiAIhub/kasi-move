@@ -660,4 +660,12 @@ describe('v2.1 shared server foundation', () => {
     expect((await call('/auth/code','POST',{phone:demoPhone})).status).toBe(403);
     expect((await call('/auth/verify','POST',{phone:demoPhone,code:demoCode})).status).toBe(401);
   });
+  it('does not create a blank stall when an existing-vendor sign-in uses a number with no stall',async()=>{
+    const stalls=()=>(sqlite.prepare('SELECT count(*) AS n FROM stalls').get() as {n:number}).n;
+    const before=stalls();
+    const miss=await call('/auth/verify','POST',{phone:'0815550177',code:'8492',existing:true});
+    expect(miss.status).toBe(404);expect(miss.body.error||miss.body.message).toMatch(/no stall under this number/i);expect(stalls()).toBe(before);
+    expect((await call('/auth/verify','POST',{phone:'0815550177',code:'8492'})).status).toBe(200);expect(stalls()).toBe(before+1);
+    expect((await call('/auth/verify','POST',{phone:'0815550177',code:'8492',existing:true})).status).toBe(200);
+  });
 });
