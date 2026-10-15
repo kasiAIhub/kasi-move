@@ -28,14 +28,14 @@ test('manual onboarding confirms its saved request and allows retry after failur
   await context.route('https://wa.me/**',route=>route.fulfill({body:'WhatsApp request handoff'}));
   await page.goto('/verify');await page.getByLabel('WhatsApp number').fill('0795550123');
   await context.route('**/api/auth/code',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Connection interrupted. Please retry.'})}));
-  await page.getByRole('button',{name:'Get my code',exact:true}).click();
+  await page.getByRole('button',{name:'Get my code on WhatsApp',exact:true}).click();
   await expect(page.getByRole('button',{name:'Retry request'})).toBeVisible();
   await expect(page.getByText(/Request sent to Thandi/)).toHaveCount(0);
   await context.unroute('**/api/auth/code');
   await page.getByRole('button',{name:'Retry request'}).click();
   await expect(page.getByRole('status')).toContainText('Request sent to Thandi’s admin inbox at');
   const requestPopup=context.pages().find(p=>p!==page)!;await requestPopup.waitForURL('https://wa.me/**');expect(new URL(requestPopup.url()).searchParams.get('text')).toContain('+27795550123');await requestPopup.close();await page.bringToFront();
-  const link=await page.getByRole('link',{name:'Send request on WhatsApp'}).getAttribute('href');
+  const link=await page.getByRole('link',{name:'Open WhatsApp again'}).getAttribute('href');
   expect(new URL(link!).searchParams.get('text')).toContain('+27795550123');
   await page.reload();await expect(page.getByLabel('Four-digit code')).toBeVisible();
 });
@@ -129,7 +129,7 @@ test('real manual code is private, logs in once, and restores the same vendor on
   await page.context().route('https://wa.me/**', route => route.fulfill({ body: 'Test handoff' }));
   const phone = '08' + String(Math.floor(Math.random() * 90000000 + 10000000));
   await page.context().route('https://wa.me/**',route=>route.fulfill({body:'WhatsApp request handoff'}));
-  await page.goto('/setup/1'); await page.getByRole('link', { name: 'Start', exact: true }).click(); await page.getByLabel('WhatsApp number').fill(phone); await page.getByRole('button', { name: 'Get my code' }).click();
+  await page.goto('/setup/1'); await page.getByRole('link', { name: 'Start', exact: true }).click(); await page.getByLabel('WhatsApp number').fill(phone); await page.getByRole('button', { name: 'Get my code on WhatsApp' }).click();
   await expect(page.getByRole('status')).toContainText('Request sent to Thandi’s admin inbox at');
   await expect(page.getByLabel('Four-digit code')).toBeVisible();
   const adminContext = await browser.newContext({baseURL:'http://localhost:5181'}), admin = await adminContext.newPage();

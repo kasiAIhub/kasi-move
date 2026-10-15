@@ -57,7 +57,7 @@ function AdminSigned({ initialError }: { initialError: string }) {
       <label>Find a WhatsApp number<input type="tel" value={search} onChange={event=>setSearch(event.target.value)} placeholder="081 234 5678" /></label>
       <button className="v-link" onClick={()=>{setSearch(''); window.history.replaceState(null,'','/admin');}}>Show all requests ({resource.data.codes.length})</button>
       <button className="v-link" onClick={()=>{void resource.reload();}}>Refresh requests</button>
-      {!rows.length && <p>{search?'No waiting request for this number. Ask them to open move.kasiaihub.com/login and tap Get my code.':'No login requests waiting. New requests will appear here.'}</p>}
+      {!rows.length && <p>{search?'No waiting request for this number. Ask them to open move.kasiaihub.com/login and tap Get my code on WhatsApp.':'No login requests waiting. New requests will appear here.'}</p>}
       {rows.map(row => <div className="v-card v-stack" key={row.phone}>
         <h2>{localPhone(row.phone)}</h2><small>{row.phone}</small>
         <p>{resource.data?.stalls.find(stall=>stall.phone===row.phone)?.name || 'New stall / setup in progress'}</p>

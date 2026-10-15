@@ -37,6 +37,7 @@ function Login() {
   async function requestCode() {
     const reply=await openWhatsAppAction(async()=>{const result=await api('/auth/code','POST',{phone:number});return {...result,link:result.requestLink};});
     setRequestedAt(reply.requestedAt||0);setRequestLink(reply.requestLink||'');setSent(true);
+    if(reply.popupBlocked&&reply.requestLink) window.location.assign(reply.requestLink);
   }
   return <><h1>{sent?'Your WhatsApp code':'Your number'}</h1><p>{sent?'Thandi will reply to the number below with your code.':'Use the WhatsApp number you will use to manage your stall.'}</p>
     <form className="v-stack" onSubmit={event=>{event.preventDefault();void task.run(async()=>{
@@ -53,11 +54,11 @@ function Login() {
       <ErrorText text={task.error}/>
       {task.error&&!sent&&<p>Your request could not be confirmed. Check your connection and retry below.</p>}
       {task.busy&&<p role="status">{sent?'Checking your code and opening your stall…':'Sending your request to Thandi’s admin inbox…'}</p>}
-      <button className="v-button" disabled={task.busy}>{task.busy?(sent?'Opening your stall…':'Sending request…'):sent?'Continue':task.error?'Retry request':'Get my code'}</button>
+      <button className="v-button" disabled={task.busy}>{task.busy?(sent?'Opening your stall…':'Sending request…'):sent?'Continue':task.error?'Retry request':'Get my code on WhatsApp'}</button>
       {sent&&<><button type="button" className="v-link" disabled={task.busy} onClick={()=>{void task.run(requestCode);}}>Request code again</button>
         <button type="button" className="v-link" disabled={task.busy} onClick={()=>{setSent(false);setCode('');setRequestedAt(0);task.clearError();}}>Use another number</button></>}
-      {(requestLink||contact.data?.supportPhone)&&<a className="v-link" href={requestLink||wa(contact.data?.supportPhone||'','Hi Thandi, I need my Kasi Move login code for '+number+'. Please check my request.')} target="_blank" rel="noreferrer">Send request on WhatsApp</a>}
-      {sent&&<p className="muted">If WhatsApp did not open, use the link above, then tap Send. Saving the request in admin does not send a WhatsApp message.</p>}
+      {sent&&(requestLink||contact.data?.supportPhone)&&<a className="v-link" href={requestLink||wa(contact.data?.supportPhone||'','Hi Thandi, I need my Kasi Move login code for '+number+'. Please check my request.')} target="_blank" rel="noreferrer">Open WhatsApp again</a>}
+      {sent&&<p className="muted">If WhatsApp did not open, tap Open WhatsApp again, then press Send in WhatsApp. Saving the request in admin does not send a WhatsApp message.</p>}
     </form></>;
 }
 export function VendorLogin() { return <Frame><Login /></Frame>; }
