@@ -86,6 +86,8 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
     notice.parameters[9]=await access.link(member,order.id);
     await options.meta?.queue(kind,member.phone,order.driverAlertId!,notice);
   }
+  const DEMO_ITEMS=(ownerId:string)=>originalKotas.map(([key, name]) => db.prepare('INSERT INTO menu(id,stall_id,body) VALUES (?,?,?)')
+    .bind(`${ownerId}-${key}`, ownerId, JSON.stringify({ id: `${ownerId}-${key}`, name, image: `/images/kota-approved-menu.png#${key}`, priceCents: null, shop: 'stall', shopName: 'Stall', enabled: true, extras: [{ id: 'egg', name: 'Extra egg', priceCents: 1000 }, { id: 'cheese', name: 'Extra cheese', priceCents: 800 }, { id: 'atchar', name: 'Atchar', priceCents: 500 }] })));
   async function resetDemoStall(){
     const target=await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(DEMO_PHONE).first<{id:string}>();
     if(!target)return;
@@ -98,10 +100,9 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
     ]);
   }
   async function seedDemoStall(id:string){
-    const at=now(),settings={createdAt:at,setupStep:9,hoursPreset:'Day and night',overrideOpen:true,overrideUntil:at+DEMO_YEARS_MS,billing:{paidThrough:at+DEMO_YEARS_MS,payments:[]}};
-    await db.prepare("UPDATE stalls SET name='Demo Stall',town='Mamelodi',hours='00:00–23:59',activated_at=?,is_open=1,settings=json_patch(settings,?) WHERE id=?").bind(at,JSON.stringify(settings),id).run();
-    const rows=(await db.prepare('SELECT id,body FROM menu WHERE stall_id=? ORDER BY rowid').bind(id).all<{id:string;body:string}>()).results;
-    await db.batch(rows.map((row,i)=>db.prepare('UPDATE menu SET body=? WHERE id=?').bind(JSON.stringify({...JSON.parse(row.body),priceCents:3500+i*500}),row.id)));
+    // The demo opens like a brand-new stall: no name, no prices, setup from step 3. Only the billing/open overrides are set so the finished demo can take orders.
+    const at=now(),settings={createdAt:at,setupStep:3,hoursPreset:'Day and night',overrideOpen:true,overrideUntil:at+DEMO_YEARS_MS,billing:{paidThrough:at+DEMO_YEARS_MS,payments:[]}};
+    await db.prepare("UPDATE stalls SET activated_at=?,is_open=1,settings=json_patch(settings,?) WHERE id=?").bind(at,JSON.stringify(settings),id).run();
   }
   async function decorate(order:GateOrder){
     if(order.driverAlertId){const row=await db.prepare("SELECT status FROM whatsapp_outbox WHERE reference=? AND kind IN ('assignment','ready') ORDER BY created_at DESC LIMIT 1").bind(order.driverAlertId).first<{status:string}>();order.driverAlertStatus=row?.status||'not_configured';}
@@ -401,7 +402,22 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
         const verified = demo ? Boolean(options.demoCode) && sameSecret(input.code, options.demoCode!) : options.manualCodes && options.activationKey ? await consumeCode(db, number, input.code, options.activationKey, now()) : await messaging.checkCode(number, input.code);
         if (!verified) fail(401, 'That code is incorrect or has expired.');
         if (input.existing === true && !demo && !await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(number).first()) fail(404, 'There is no stall under this number. Check the number, or open a new stall.');
-        if (demo) await resetDemoStall();
+        if (demo) {
+          // Demo sign-in: one database round trip for the whole reset and fresh stall (each trip is slow from South Africa).
+          const oldDemo = await db.prepare('SELECT id FROM stalls WHERE phone=?').bind(DEMO_PHONE).first<{id:string}>();
+          if (oldDemo) await options.deletePhotos?.(oldDemo.id);
+          const id = crypto.randomUUID(), at = now();
+          const settings = { createdAt: at, setupStep: 3, hoursPreset: 'Day and night', overrideOpen: true, overrideUntil: at + DEMO_YEARS_MS, billing: { paidThrough: at + DEMO_YEARS_MS, payments: [] } };
+          const mine = '(SELECT id FROM stalls WHERE phone=?)';
+          await db.batch([
+            db.prepare("DELETE FROM whatsapp_outbox WHERE json_extract(payload,'$.orderId') IN (SELECT id FROM gate_orders WHERE stall_id IN "+mine+")").bind(DEMO_PHONE),
+            ...['team_access','photo_edits','referral_awards','vendor_passwords','gate_orders','menu','order_counters','rider_invites','team_members','activation_checkouts','sessions'].map(table=>db.prepare('DELETE FROM '+table+' WHERE stall_id IN '+mine).bind(DEMO_PHONE)),
+            db.prepare('DELETE FROM login_codes WHERE phone=?').bind(DEMO_PHONE),
+            db.prepare('DELETE FROM stalls WHERE phone=?').bind(DEMO_PHONE),
+            db.prepare("INSERT INTO stalls(id,phone,referral_name,activated_at,is_open,settings) VALUES (?,?,'',?,1,json_patch('{}',?))").bind(id, DEMO_PHONE, at, JSON.stringify(settings)),
+            ...DEMO_ITEMS(id)
+          ]);
+        }
         const inserted = await db.prepare('INSERT INTO stalls(id,phone,referral_name) VALUES (?,?,?) ON CONFLICT(phone) DO NOTHING').bind(crypto.randomUUID(), number, demo ? '' : referralName).run();
         const owner = (await db.prepare('SELECT * FROM stalls WHERE phone=?').bind(number).first<StallRow>())!;
         if (inserted.meta.changes) {

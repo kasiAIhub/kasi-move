@@ -644,7 +644,7 @@ describe('v2.1 shared server foundation', () => {
     expect(first.status).toBe(200);expect(first.body.stall.referral_name).toBe('');
     const owner=first.body.stall,cookie=first.cookie;
     expect(first.body.owner.stall.is_open).toBe(1);
-    expect(first.body.owner.menu.every((item:any)=>item.priceCents>0)).toBe(true);
+    expect(first.body.owner.menu.every((item:any)=>item.priceCents===null)).toBe(true);expect(first.body.owner.stall.name).toBe("");
     expect((await call('/session','GET',undefined,cookie)).body.demo).toBe(true);
     expect((await call('/vendor/activation','POST',{},cookie)).status).toBe(200);
     const admin=await call('/admin/login','POST',{key});
@@ -653,7 +653,7 @@ describe('v2.1 shared server foundation', () => {
     // The code is reusable, and every sign-in starts from a clean demo stall.
     await call('/vendor/stall','PUT',{name:'Changed',town:'X',hours:'08:00–21:00',open:true,takesCard:false},cookie);
     const second=await call('/auth/verify','POST',{phone:demoPhone,code:demoCode});
-    expect(second.status).toBe(200);expect(second.body.stall.name).toBe('Demo Stall');expect(second.body.stall.id).not.toBe(owner.id);
+    expect(second.status).toBe(200);expect(second.body.stall.name).toBe('');expect(second.body.stall.id).not.toBe(owner.id);
     expect(sqlite.prepare("SELECT count(*) AS n FROM whatsapp_outbox").get()).toEqual({n:0});
     // Unconfigured deployments keep the number closed.
     api=createApi(db,provider,()=>time,{activationKey:key});

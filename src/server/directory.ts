@@ -9,31 +9,41 @@ import { stallPlan } from './plan';
 export interface DirectoryItem { name: string; priceCents: number }
 export interface DirectoryStall { id: string; name: string; town: string; hours: string; takesCard: boolean; delivery: boolean; items: DirectoryItem[]; special: { text: string; to: number } | null }
 
-export async function listedStalls(db: Database, now: number): Promise<DirectoryStall[]> {
-  const rows = (await db.prepare("SELECT * FROM stalls WHERE phone<>? AND activated_at IS NOT NULL AND name<>'' AND town<>'' ORDER BY town COLLATE NOCASE, name COLLATE NOCASE").bind(DEMO_PHONE).all<StallRow>()).results;
-  const out: DirectoryStall[] = [];
+export async function listedStalls(db: Database, now: number, onlyId?: string): Promise<DirectoryStall[]> {
+  const base = "SELECT * FROM stalls WHERE phone<>? AND activated_at IS NOT NULL AND name<>'' AND town<>''";
+  const rows = (onlyId
+    ? await db.prepare(base + ' AND id=?').bind(DEMO_PHONE, onlyId).all<StallRow>()
+    : await db.prepare(base + ' ORDER BY town COLLATE NOCASE, name COLLATE NOCASE').bind(DEMO_PHONE).all<StallRow>()).results;
+  const candidates: { row: StallRow; settings: StallSettings }[] = [];
   for (const row of rows) {
     let settings: StallSettings;
     try { settings = JSON.parse(row.settings); } catch { continue; }
-    if (!((settings.setupStep ?? 0) >= 9) || !stallPlan(row, now).active) continue;
-    const items = await stallItems(db, row.id);
+    if ((settings.setupStep ?? 0) >= 9 && stallPlan(row, now).active) candidates.push({ row, settings });
+  }
+  if (!candidates.length) return [];
+  // One menu query for all candidates, not one per stall: each database round trip is slow from South Africa.
+  const menus = new Map<string, DirectoryItem[]>();
+  const ids = candidates.map(c => c.row.id);
+  for (let i = 0; i < ids.length; i += 50) {
+    const chunk = ids.slice(i, i + 50);
+    const found = (await db.prepare(`SELECT stall_id, body FROM menu WHERE stall_id IN (${chunk.map(() => '?').join(',')}) ORDER BY rowid`).bind(...chunk).all<{ stall_id: string; body: string }>()).results;
+    for (const row of found) { const item = directoryItem(row.body); if (item) (menus.get(row.stall_id) ?? menus.set(row.stall_id, []).get(row.stall_id)!).push(item); }
+  }
+  const out: DirectoryStall[] = [];
+  for (const { row, settings } of candidates) {
+    const items = menus.get(row.id) ?? [];
     if (!items.length) continue;
     out.push({ id: row.id, name: row.name, town: row.town, hours: row.hours, takesCard: Boolean(row.takes_card), delivery: Boolean(row.rider_phone) && settings.deliveryEnabled !== false, items, special: settings.special && settings.special.from <= now && now < settings.special.to ? { text: settings.special.text, to: settings.special.to } : null });
   }
   return out;
 }
 export async function listedStall(db: Database, id: string, now: number) {
-  return (await listedStalls(db, now)).find(stall => stall.id === id) ?? null;
+  return (await listedStalls(db, now, id))[0] ?? null;
 }
-async function stallItems(db: Database, stallId: string): Promise<DirectoryItem[]> {
-  const rows = (await db.prepare('SELECT body FROM menu WHERE stall_id=? ORDER BY rowid').bind(stallId).all<{ body: string }>()).results;
-  const items: DirectoryItem[] = [];
-  for (const row of rows) {
-    let item: GateItem; try { item = JSON.parse(row.body); } catch { continue; }
-    if (item.shop !== 'stall' || !item.enabled || item.alcohol || isAlcoholName(item.name) || item.priceCents === null || !Number.isFinite(item.priceCents)) continue;
-    items.push({ name: item.name, priceCents: item.priceCents });
-  }
-  return items;
+function directoryItem(body: string): DirectoryItem | null {
+  let item: GateItem; try { item = JSON.parse(body); } catch { return null; }
+  if (item.shop !== 'stall' || !item.enabled || item.alcohol || isAlcoholName(item.name) || item.priceCents === null || !Number.isFinite(item.priceCents)) return null;
+  return { name: item.name, priceCents: item.priceCents };
 }
 
 const untilText = (t: number) => new Date(t).toLocaleString('en-ZA', { weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Johannesburg' });

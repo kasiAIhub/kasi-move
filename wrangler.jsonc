@@ -2,6 +2,7 @@
   "name": "kasi-move",
   "main": "dist/server/index.js",
   "preview_urls": false,
+  "placement": { "mode": "smart" },
   "compatibility_date": "2026-10-01",
   "assets": { "directory": "dist/client", "binding": "ASSETS", "run_worker_first": true },
   "d1_databases": [{ "binding": "DB", "database_name": "kasi-move", "database_id": "d635d9b7-d47c-44a7-8af3-4c5a4c52de33", "migrations_dir": "drizzle" }]
