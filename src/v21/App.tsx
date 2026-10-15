@@ -46,6 +46,7 @@ export default function App() {
     <Route path="/owner/delivery-team" element={<Private role="vendor"><TeamManager role="rider"/></Private>}/><Route path="/owner/assistants" element={<Private role="vendor"><TeamManager role="assistant"/></Private>}/><Route path="/team/invite" element={<TeamInvite/>}/><Route path="/assistant" element={<Private role="assistant"><AssistantKitchen/></Private>}/>
     <Route path="/rider/invite" element={<RiderInvite />} /><Route path="/rider" element={<Private role="rider"><Rider /></Private>} />
     <Route path="/roles" element={<Navigate to="/" replace />} /><Route path="/owner/start" element={<Navigate to="/" replace />} />
+    <Route path="/:stallId" element={<StallMenu />} />
     <Route path="*" element={<Frame><h1>This page has moved.</h1><Link className="v-button" to="/">Open Kasi Move</Link></Frame>} />
   </Routes></DraftProvider></IdentityProvider></BrowserRouter>;
 }

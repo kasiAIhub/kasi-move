@@ -20,7 +20,7 @@ export async function saveItem(item: GateItem, change: Partial<GateItem> & { sol
   return api('/vendor/menu', 'PUT', { ...item, soldOutToday: item.soldOutDate === day(Date.now()), ...change });
 }
 function Share({data,onDone}:{data:OwnerData;onDone?:()=>void}) {
-  return <StallShare stall={{id:data.stall.id,name:data.stall.name,hours:data.stall.hours,takesCard:Boolean(data.stall.takes_card),delivery:Boolean(data.stall.rider_phone)&&settingsOf(data.stall).deliveryEnabled!==false,deliveryName:data.team?.find(m=>m.role==='rider'&&m.phone===data.stall.rider_phone)?.name||settingsOf(data.stall).riderName}} onDone={onDone} blocked={hasFoodPhotos(data.menu)?undefined:PHOTO_GATE_MESSAGE}/>;
+  return <StallShare stall={{id:data.stall.id,slug:data.stall.slug,name:data.stall.name,hours:data.stall.hours,takesCard:Boolean(data.stall.takes_card),delivery:Boolean(data.stall.rider_phone)&&settingsOf(data.stall).deliveryEnabled!==false,deliveryName:data.team?.find(m=>m.role==='rider'&&m.phone===data.stall.rider_phone)?.name||settingsOf(data.stall).riderName}} onDone={onDone} blocked={hasFoodPhotos(data.menu)?undefined:PHOTO_GATE_MESSAGE}/>;
 }
 function Login({existing=false}:{existing?:boolean}) {
   const requestedNumber=new URLSearchParams(window.location.search).get('phone')||'';
@@ -139,7 +139,7 @@ export function Till() {
       {order.lines.filter(line => line.shop === 'stall').map(line => <p key={line.lineId || line.itemId}>{line.quantity} × {line.name}{line.extras?.length ? ` + ${line.extras.map(extra => extra.name).join(', ')}` : ''} · {rand(line.priceCents * line.quantity)}</p>)}
       {order.lines.some(line => line.shop !== 'stall') && <p className="muted">Also on this order: {order.lines.filter(line => line.shop !== 'stall').map(line => `${line.name} (${line.shopName})`).join(', ')} — delivery person collects</p>}
       <p>{order.fulfilment === 'collection' ? `collecting ${order.collectionTime}` : `Customer pays ${rand(orderMoney(order).totalCents)} at the gate · ${order.method}`}</p><p>Yours {rand(orderMoney(order).kotaCents)}{order.fulfilment === 'delivery' && (order.riderPhone?' · delivery '+rand(order.riderFeeCents ?? 1000):' · assign delivery to confirm the run fee')}</p>
-      <OrderPhoto order={order} stallName={data.stall.name} reload={refresh}/><DeliveryAssignment order={order} members={data.team??[]} onSaved={refresh}/>
+      <OrderPhoto order={order} stallName={data.stall.name} stallSlug={data.stall.slug} reload={refresh}/><DeliveryAssignment order={order} members={data.team??[]} onSaved={refresh}/>
       {order.state==='new'&&<button className="v-button" disabled={task.busy} onClick={()=>task.run(async()=>{try{await api('/orders/'+order.id+'/cook','POST',{});}finally{await refresh();}})}>Start cooking</button>}
       {order.state === 'cooking' && <button className="v-button" disabled={task.busy} onClick={() => task.run(async () => { await api(`/orders/${order.id}/ready`, 'POST', {}); await refresh(); })}>{order.fulfilment === 'collection' ? 'Ready for collection' : 'Ready for delivery'}</button>}
       {order.fulfilment === 'collection' && order.state === 'ready' && <button className="v-button" disabled={task.busy} onClick={() => task.run(async () => { await api(`/orders/${order.id}/deliver`, 'POST', {}); await refresh(); })}>Collected · {order.method === 'cash' ? 'cash in hand' : 'card payments'}</button>}
@@ -204,7 +204,7 @@ export function More() {
   </Frame>;
 }
 export function KeepStall() {
-  const resource=useResource<{photosReady?:boolean;stallName:string;hours?:string;takesCard:boolean;delivery:boolean;deliveryName?:string;stallId:string;plan:ReturnType<typeof stallPlan>;reported:boolean;instructions:string|null}>('/vendor/activation',true),task=useTask();
+  const resource=useResource<{photosReady?:boolean;slug?:string|null;stallName:string;hours?:string;takesCard:boolean;delivery:boolean;deliveryName?:string;stallId:string;plan:ReturnType<typeof stallPlan>;reported:boolean;instructions:string|null}>('/vendor/activation',true),task=useTask();
   const config=useResource<{supportPhone:string;cashSendNumber:string;bankDetails:string}>('/config');
   const orders=useResource<{orders:GateOrder[]}>('/orders');
   if(!resource.data||!config.data) return <Loading error={resource.error||config.error}/>;
@@ -230,7 +230,7 @@ export function KeepStall() {
     <ReferralShare name={data.stallName}/><section className="v-card v-stack"><h2>Kasi Move app QR</h2><p>Scan to open Kasi Move and start a stall. Use this app QR code in your videos.</p>
       <img src="/images/kasi-move-qr.svg" alt="QR code for https://move.kasiaihub.com" style={{width:240,maxWidth:'100%',alignSelf:'center'}}/>
       <a className="v-button" href="/images/kasi-move-qr.png" download="kasi-move-qr.png">Download app QR code</a><p>move.kasiaihub.com</p>
-      <p>For customers ordering from your own stall:</p><StallShare stall={{id:data.stallId,name:data.stallName,hours:data.hours,takesCard:data.takesCard,delivery:data.delivery,deliveryName:data.deliveryName}} blocked={data.photosReady===false?PHOTO_GATE_MESSAGE:undefined}/>
+      <p>For customers ordering from your own stall:</p><StallShare stall={{id:data.stallId,slug:data.slug,name:data.stallName,hours:data.hours,takesCard:data.takesCard,delivery:data.delivery,deliveryName:data.deliveryName}} blocked={data.photosReady===false?PHOTO_GATE_MESSAGE:undefined}/>
     </section>
   </Frame>;
 }

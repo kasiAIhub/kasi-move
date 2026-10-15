@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, appOrigin, useTask, wa } from './client';
 import { ErrorText } from './common';
+import { stallPath } from '../server/slug';
 import { stallShareMessage, type ShareStall } from './share-text';
 
 export type { ShareStall };
@@ -15,7 +16,7 @@ function wrap(context: CanvasRenderingContext2D, text: string, y: number, size =
 }
 export function StallShare({ stall, onDone, blocked }: { stall: ShareStall; onDone?:()=>void; blocked?: string }) {
   const [open,setOpen]=useState(false),[poster,setPoster]=useState<{url:string;file:File}|null>(null),[error,setError]=useState('');
-  const task=useTask(),message=stallShareMessage(stall,appOrigin()),link=appOrigin()+'/stall/'+stall.id;
+  const task=useTask(),message=stallShareMessage(stall,appOrigin()),link=appOrigin()+stallPath(stall);
   useEffect(()=>{
     if(!open)return;
     let active=true,objectUrl='';

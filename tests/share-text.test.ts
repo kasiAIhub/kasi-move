@@ -18,3 +18,12 @@ describe('share text', () => {
     expect(closingTime('08:00-21:00')).toBe('21:00');
   });
 });
+import { describe as d2, expect as e2, it as i2 } from 'vitest';
+import { stallShareMessage as msg } from '../src/v21/share-text';
+d2('short share link', () => {
+  i2('uses the short slug link when the stall has one, the long link otherwise', () => {
+    const base = { id: 'abc-123', name: 'Mama T Kota', takesCard: false, delivery: false };
+    e2(msg({ ...base, slug: 'mama-t-kota' }, 'https://move.kasiaihub.com').split('\n').pop()).toBe('👉 https://move.kasiaihub.com/mama-t-kota');
+    e2(msg(base, 'https://x.test').split('\n').pop()).toBe('👉 https://x.test/stall/abc-123');
+  });
+});

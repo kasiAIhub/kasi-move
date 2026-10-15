@@ -274,6 +274,21 @@ describe('v2.1 shared server foundation', () => {
     const live = await call('/stalls/' + owner.id);
     expect(live.status).toBe(200); expect(live.body.open).toBe(false);
   });
+  it('short links: slug from the name, -2 on collision, fixed on rename, reserved words never stand alone, old id links still work', async () => {
+    const name = async (phone: string, stallName: string) => {
+      const v = await vendor(phone);
+      await call('/vendor/stall', 'PUT', { name: stallName, town: 'Mamelodi', hours: '08:00–21:00', open: true, takesCard: false }, v.cookie);
+      sqlite.prepare("UPDATE menu SET body=json_set(body,'$.image','/photos/x/own.jpg') WHERE stall_id=?").run(v.id);
+      return { ...v, slug: (await call('/vendor/stall', 'GET', undefined, v.cookie)).body.stall.slug as string };
+    };
+    const a = await name('0811111111', "Mama T's Kota!"), b = await name('0822222222', 'Mama Ts Kota'), c = await name('0833333333', 'Admin');
+    expect(a.slug).toBe('mama-ts-kota'); expect(b.slug).toBe('mama-ts-kota-2'); expect(c.slug).toBe('admin-2');
+    await call('/vendor/stall', 'PUT', { name: 'Totally Different', town: 'Mamelodi', hours: '08:00–21:00', open: true, takesCard: false }, a.cookie);
+    expect((await call('/vendor/stall', 'GET', undefined, a.cookie)).body.stall.slug).toBe('mama-ts-kota');
+    const bySlug = await call('/stalls/mama-ts-kota'), byId = await call('/stalls/' + a.id);
+    expect(bySlug.status).toBe(200); expect(bySlug.body.id).toBe(a.id); expect(byId.body.slug).toBe('mama-ts-kota');
+    expect((await call('/stalls/nope-nobody')).status).toBe(404);
+  });
   it('hides unpriced/sold-out menu items and restores daily availability at South African midnight', async () => {
     const { owner } = await setup();
     await call('/vendor/menu', 'PUT', { id: 'blank', name: 'Chicken', priceCents: null, shop: 'stall', shopName: 'Mamelodi', enabled: true }, owner.cookie);

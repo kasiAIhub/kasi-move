@@ -3,6 +3,7 @@ import { createApi } from './api';
 import type { Database } from './database';
 import { whatsapp, type WhatsAppConfig } from './whatsapp';
 import { directoryHtml, directoryJson, listedStall, listedStalls, llmsTxt, robotsTxt, sitemapXml, stallLdTag } from './directory';
+import { isShortStallPath } from './slug';
 import { apiConfiguration, type Configuration } from './config';
 interface Environment extends WhatsAppConfig, Configuration {
   DB: Database;
@@ -58,11 +59,11 @@ export default {
     }
     if (env.ASSETS && /\.[a-z0-9]+$/i.test(url.pathname)) return env.ASSETS.fetch(request);
     let html=APP_HTML;
-    const stallPage=url.pathname.match(/^\/stall\/([^/]+)$/);
+    const stallPage=url.pathname.match(/^\/stall\/([^/]+)$/)??(isShortStallPath(url.pathname)?[url.pathname,url.pathname.replace(/\//g,'')]:null);
     if(stallPage && env.DB) {
-      const stall=await env.DB.prepare('SELECT name,takes_card,rider_phone FROM stalls WHERE id=?').bind(stallPage[1]).first<{name:string;takes_card:number;rider_phone:string|null}>();
+      const stall=await env.DB.prepare('SELECT id,name,takes_card,rider_phone FROM stalls WHERE id=? OR slug=?').bind(stallPage[1],stallPage[1]).first<{id:string;name:string;takes_card:number;rider_phone:string|null}>();
       if(stall?.name) {
-        const listed=await listedStall(env.DB,stallPage[1],Date.now()).catch(()=>null),ld=listed?stallLdTag(listed,url.origin):'';
+        const listed=await listedStall(env.DB,stall.id,Date.now()).catch(()=>null),ld=listed?stallLdTag(listed,url.origin):'';
         const escape=(value:string)=>value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]!));
         const title=escape(stall.name+' · Order from our digital menu');
         const description=escape((stall.rider_phone?'Order for collection or delivery.':'Order online and collect at our stall.')+(stall.takes_card?' Pay on handover with cash or card.':' Pay cash on handover.'));

@@ -1,3 +1,4 @@
+import { isShortStallPath } from '../server/slug';
 import { useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, Camera } from 'lucide-react';
@@ -7,12 +8,12 @@ export const ErrorText = ({ text }: { text?: string }) => text ? <p className="v
 export function Back({ fallback = '/' }: { fallback?: string }) { const navigate = useNavigate(), location = useLocation(); const home = location.pathname.match(/^\/stall\/[^/]+/)?.[0] || (location.pathname.startsWith('/order/') ? '/my-orders' : fallback); return <button className="v-back" aria-label="Back" onClick={() => window.history.state?.idx > 0 ? navigate(-1) : navigate(home)}><ArrowLeft size={18} />Back</button>; }
 export function ViewSwitcher() {
   const identity = useIdentity(), task = useTask(), navigate = useNavigate(), location = useLocation();
-  const customer = /^\/(stall|order|my-orders)(\/|$)/.test(location.pathname);
+  const customer = /^\/(stall|order|my-orders)(\/|$)/.test(location.pathname) || isShortStallPath(location.pathname);
   if (!identity.session?.ownerSetupComplete || location.pathname.startsWith('/setup')) return null;
   return <div className="v-view-switch"><nav aria-label="App view"><button aria-pressed={!customer} disabled={task.busy} onClick={() => task.run(async () => { await api('/auth/owner', 'POST', {}); await identity.refresh(); navigate('/kitchen'); })}>Owner view</button><button aria-pressed={customer} disabled={task.busy} onClick={() => task.run(async () => { const id = identity.session?.ownerStallId; await api('/auth/customer', 'POST', {}); navigate('/stall/' + id); await identity.refresh(); })}>Customer view</button></nav><ErrorText text={task.error} /></div>;
 }
 export function Frame({ children, name, open, vendor = false, back = true }: { children: ReactNode; name?: string; open?: boolean; vendor?: boolean; back?: boolean }) {
-  const customer = /^\/(stall|order|my-orders)(\/|$)/.test(useLocation().pathname);
+  const customerPath = useLocation().pathname, customer = /^\/(stall|order|my-orders)(\/|$)/.test(customerPath) || isShortStallPath(customerPath);
   const { session } = useIdentity(), demo = vendor && Boolean(session?.demo);
   return <div className={customer ? 'v-app v-premium' : 'v-app'}>{demo && <div className="v-card" role="status" style={{background:'#fff3cd',textAlign:'center',padding:'6px'}}><strong>Demo stall</strong> - practice only. No messages are sent and no payments are taken. It resets each time you sign in.</div>}<header className="v-header">{(vendor || customer) && <ViewSwitcher />}<small className="v-brand">Kasi Move</small>{back && <Back fallback={vendor ? '/kitchen' : '/'} />}{name && <div className="v-header-name"><strong>{name}</strong>{open !== undefined && <span className={open ? 'v-open' : 'muted'}>{open ? 'OPEN' : 'CLOSED'}</span>}</div>}</header><main className="v-main">{children}</main>{vendor && <nav className="v-nav" aria-label="Owner navigation">{[['/kitchen', 'Orders'], ['/owner/menu', 'Menu'], ['/owner/dashboard', 'Money'], ['/owner/more', 'More']].map(([path, label]) => <NavLink key={path} to={path}>{label}</NavLink>)}</nav>}</div>;
 }

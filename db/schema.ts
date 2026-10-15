@@ -9,6 +9,7 @@ export const stalls = sqliteTable('stalls', {
   riderPhone: text('rider_phone'), firstOrderAt: integer('first_order_at'), activatedAt: integer('activated_at'),
   settings: text('settings').notNull().default('{}'),
   paymentReportedAt: integer('payment_reported_at'),
+  slug: text('slug').unique(),
 });
 export const menu = sqliteTable('menu', {
   id: text('id').primaryKey(), stallId: text('stall_id').notNull().references(() => stalls.id),

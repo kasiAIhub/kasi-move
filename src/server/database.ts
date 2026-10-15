@@ -22,5 +22,6 @@ export interface StallRow {
   first_order_at: number | null;
   activated_at: number | null;
   settings: string;
+  slug?: string | null;
   payment_reported_at: number | null;
 }

@@ -16,6 +16,7 @@ import { requestCode, makeCode, consumeCode, pendingCodes, digest } from './priv
 import { isAlcoholName, productImage } from './next-door';
 import { verifyYoco } from './payments';
 import { stallPlan, nextMonth, ONBOARDING_CENTS, hasFoodPhotos } from './plan';
+import { slugBase, slugCandidate } from './slug';
 
 interface Session { hash: string; role: 'vendor' | 'customer' | 'rider' | 'assistant'; stall_id: string | null; phone: string | null }
 interface OrderRow { id: string; stall_id: string; customer_hash: string; body: string; version: number }
@@ -150,8 +151,24 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
     }
     return session;
   }
+  /** Gives a named stall its permanent short link name once. Never changes it afterwards, even on rename. */
+  async function withSlug(row: StallRow): Promise<StallRow> {
+    if (row.slug || !row.name.trim()) return row;
+    const base = slugBase(row.name);
+    for (let n = 1; n <= 60; n++) {
+      const candidate = slugCandidate(base, n);
+      if (await db.prepare('SELECT id FROM stalls WHERE slug=?').bind(candidate).first()) continue;
+      try { await db.prepare('UPDATE stalls SET slug=? WHERE id=? AND slug IS NULL').bind(candidate, row.id).run(); } catch { continue; }
+      return await db.prepare('SELECT * FROM stalls WHERE id=?').bind(row.id).first<StallRow>() ?? row;
+    }
+    return row;
+  }
   async function stall(id: string): Promise<StallRow> {
-    return await db.prepare('SELECT * FROM stalls WHERE id=?').bind(id).first<StallRow>() ?? fail(404, 'Stall not found.');
+    return withSlug(await db.prepare('SELECT * FROM stalls WHERE id=?').bind(id).first<StallRow>() ?? fail(404, 'Stall not found.'));
+  }
+  async function stallByKey(key: string): Promise<StallRow> {
+    const row = await db.prepare('SELECT * FROM stalls WHERE id=?').bind(key).first<StallRow>() ?? await db.prepare('SELECT * FROM stalls WHERE slug=?').bind(key.toLowerCase()).first<StallRow>();
+    return withSlug(row ?? fail(404, 'Stall not found.'));
   }
   async function menu(stallId: string): Promise<GateItem[]> {
     return (await db.prepare('SELECT body FROM menu WHERE stall_id=? ORDER BY rowid').bind(stallId).all<{ body: string }>()).results.map(row => { const item: GateItem = JSON.parse(row.body); return { ...item, alcohol: item.alcohol || isAlcoholName(item.name), alternative: undefined, image: item.shop === 'stall' ? kotaImage(item) : productImage(item.name) || item.image }; });
@@ -241,6 +258,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
             await db.prepare('INSERT INTO stalls(id,phone,name,town,hours,referral_name) VALUES (?,?,?,?,?,?)').bind(id, number, name, town, hours, '').run();
             await db.prepare('UPDATE stalls SET settings=json_patch(settings,?) WHERE id=?').bind(JSON.stringify({ createdAt: now() }), id).run();
             await db.batch(starterMenu(id, name));
+            await stall(id);
             return json({ created: true, stallId: id });
           }
           const target = await stall(text(input.stallId));
@@ -477,10 +495,10 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
       }
       const publicMatch = path.match(/^\/stalls\/([^/]+)$/);
       if (publicMatch && request.method === 'GET') {
-        const record = await stall(publicMatch[1]);
+        const record = await stallByKey(publicMatch[1]);
         const items = await menu(record.id);
         if (!hasFoodPhotos(items)) fail(404, 'This stall is not live yet.');
-        return json({ id: record.id, name: record.name, phone: record.phone, hours: record.hours, alcoholTesting: false,
+        return json({ id: record.id, slug: record.slug ?? null, name: record.name, phone: record.phone, hours: record.hours, alcoholTesting: false,
           open: accepting(record, now()), special: activeSpecial(JSON.parse(record.settings), now()), takesCard: Boolean(record.takes_card), delivery: Boolean(record.rider_phone) && JSON.parse(record.settings).deliveryEnabled!==false,
           menu: items.filter(item => available(item, record)),
           nextDoorDisplay: items.filter(item => item.shop !== 'stall' && available({ ...item, soldOutDate: undefined }, record)),
@@ -704,7 +722,7 @@ export function createApi(db: Database, messaging: WhatsApp, now: () => number =
           return json({ settings });
         }
         if (path === '/vendor/activation' && request.method === 'GET') return json({
-          online: false, photosReady: hasFoodPhotos(await menu(owner.id)), takesCard: Boolean(owner.takes_card), delivery: Boolean(owner.rider_phone) && JSON.parse(owner.settings).deliveryEnabled!==false, stallName: owner.name, hours: owner.hours, deliveryName:(await db.prepare("SELECT name FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(owner.id,owner.rider_phone).first<{name:string}>())?.name, plan: stallPlan(owner,now()), stallId: owner.id,
+          online: false, photosReady: hasFoodPhotos(await menu(owner.id)), slug: owner.slug ?? null, takesCard: Boolean(owner.takes_card), delivery: Boolean(owner.rider_phone) && JSON.parse(owner.settings).deliveryEnabled!==false, stallName: owner.name, hours: owner.hours, deliveryName:(await db.prepare("SELECT name FROM team_members WHERE stall_id=? AND phone=? AND role='rider' AND active=1").bind(owner.id,owner.rider_phone).first<{name:string}>())?.name, plan: stallPlan(owner,now()), stallId: owner.id,
           paymentUrl: null,
           instructions: options.paymentInstructions ?? null, activated: owner.activated_at !== null, reported: owner.payment_reported_at !== null,
         });

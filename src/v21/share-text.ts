@@ -1,4 +1,5 @@
-export interface ShareStall { id: string; name: string; takesCard: boolean; delivery: boolean; deliveryName?: string; hours?: string }
+import { stallPath } from '../server/slug';
+export interface ShareStall { id: string; slug?: string | null; name: string; takesCard: boolean; delivery: boolean; deliveryName?: string; hours?: string }
 /** Closing time from a stall's hours such as "08:00–21:00". Empty when the hours cannot be read. */
 export function closingTime(hours?: string) {
   const match = /(\d{1,2}):(\d{2})\s*[–—-]\s*(\d{1,2}):(\d{2})/.exec(hours ?? '');
@@ -11,6 +12,6 @@ export function stallShareMessage(stall: ShareStall, origin: string) {
   if (until) lines.push('🕚 The kitchen is now open until ' + until + '.');
   if (stall.delivery && driver) lines.push('🛵 ' + driver + ' will be delivering to your gate' + (stall.takesCard ? ' - tell us if you need them to bring a speed point.' : '.'));
   lines.push((stall.delivery && driver ? '🏪 Or order and collect from the stall.' : '🏪 Order and collect from the stall.') + (stall.takesCard ? '' : ' Cash only.'));
-  lines.push('👉 ' + origin + '/stall/' + stall.id);
+  lines.push('👉 ' + origin + stallPath(stall));
   return lines.join('\n');
 }
