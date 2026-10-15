@@ -22,16 +22,16 @@ export function Photo({ src, name, onChange }: { src?: string; name: string; onC
   const input = useRef<HTMLInputElement>(null), gallery = useRef<HTMLInputElement>(null), [choosing, setChoosing] = useState(false), task = useTask();
   async function upload(file: File) {
     const bitmap = await createImageBitmap(file);
-    const canvas = document.createElement('canvas'); canvas.width = 900; canvas.height = 900;
+    const canvas = document.createElement('canvas'); canvas.width = 720; canvas.height = 720;
     const context = canvas.getContext('2d')!;
     const size = Math.min(bitmap.width, bitmap.height);
-    context.drawImage(bitmap, (bitmap.width - size) / 2, (bitmap.height - size) / 2, size, size, 0, 0, 900, 900); bitmap.close();
-    const image = context.getImageData(0, 0, 900, 900); let light = 0;
+    context.drawImage(bitmap, (bitmap.width - size) / 2, (bitmap.height - size) / 2, size, size, 0, 0, 720, 720); bitmap.close();
+    const image = context.getImageData(0, 0, 720, 720); let light = 0;
     for (let i = 0; i < image.data.length; i += 4) light += (image.data[i] + image.data[i + 1] + image.data[i + 2]) / 3;
-    const gain = Math.min(1.2, Math.max(1, 110 / (light / (900 * 900) || 1)));
+    const gain = Math.min(1.2, Math.max(1, 110 / (light / (720 * 720) || 1)));
     for (let i = 0; i < image.data.length; i += 4) for (let channel = 0; channel < 3; channel++) image.data[i + channel] = Math.min(255, image.data[i + channel] * gain * [1.025, 1, .975][channel]);
     context.putImageData(image, 0, 0);
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not prepare this photo.')), 'image/jpeg', .88));
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not prepare this photo.')), 'image/jpeg', .82));
     const result = await api('/vendor/photo', 'POST', blob); await onChange(result.image);
   }
   return <div><button type="button" className="v-photo" disabled={task.busy} onClick={() => setChoosing(!choosing)} aria-label={`Add photo of ${name}`}>

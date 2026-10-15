@@ -28,5 +28,5 @@ export function ProductImage({
         <image href={file} width="1401" height="1123" />
       </svg>
     );
-  return <img src={src} alt={alt} className={className} {...rest} />;
+  return <img src={src} alt={alt} className={className} loading="lazy" decoding="async" {...rest} />;
 }

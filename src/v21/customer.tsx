@@ -48,7 +48,7 @@ export function Kota() {
   const stall = resource.data, item = stall.menu.find(item => item.id === itemId && item.shop === 'stall');
   if (!item) return <Frame name={stall.name}><p>This food item is not available.</p><Link className="v-button" to={`/stall/${stallId}`}>Choose something else</Link></Frame>;
   const total = quantity * (item.priceCents! + (item.extras ?? []).filter(extra => extras.includes(extra.id)).reduce((sum, extra) => sum + extra.priceCents, 0));
-  return <Frame name={stall.name} open={stall.open}>{foodImage(item) && <ProductImage className="v-kota-hero" src={foodImage(item)} alt={item.name} />}<h1>{item.name}</h1>
+  return <Frame name={stall.name} open={stall.open}>{foodImage(item) && <ProductImage className="v-kota-hero" src={foodImage(item)} alt={item.name} loading="eager" />}<h1>{item.name}</h1>
     {!!item.extras?.length && <div><h2>Make it yours</h2><p className="muted">Optional extras · choose what you love</p></div>}<div className="v-extras">{(item.extras ?? []).map(extra => <label className="v-choice" key={extra.id}><input type="checkbox" checked={extras.includes(extra.id)} onChange={event => setExtras(event.target.checked ? [...extras, extra.id] : extras.filter(id => id !== extra.id))} />{extra.name}<strong>+{rand(extra.priceCents)}</strong></label>)}</div>
     <div className="v-row v-quantity"><button aria-label="One less" disabled={quantity <= 1} onClick={() => setQuantity(quantity - 1)}>−</button><strong>{quantity}</strong><button aria-label="One more" disabled={quantity >= 20} onClick={() => setQuantity(quantity + 1)}>+</button><strong>{rand(total)}</strong></div>
     <button className="v-button" disabled={!stall.open} onClick={() => {
