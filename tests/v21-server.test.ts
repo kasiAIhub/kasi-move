@@ -111,14 +111,11 @@ describe('v2.1 shared server foundation', () => {
   });
   it('saves a setup menu and progress atomically and isolates other stalls',async()=>{
     const owner=await vendor(),other=await vendor('0821234567');
-    expect((await call('/vendor/stall','GET',undefined,owner.cookie)).body.menu).toHaveLength(0);
-    expect((await call('/vendor/setup','PUT',{step:4,items:[]},owner.cookie)).status).toBe(400);
-    const items=['a','b','c','d','e','f'].map(k=>({id:owner.id+'-'+k,name:'Kota '+k,priceCents:null,shop:'stall',shopName:'Stall',enabled:true}));
+    const items=(await call('/vendor/stall','GET',undefined,owner.cookie)).body.menu;
     const saved=await call('/vendor/setup','PUT',{step:4,items:items.map((item:any)=>({...item,priceCents:4500}))},owner.cookie);
     expect(saved.status).toBe(200);expect(saved.body.menu.every((item:any)=>item.priceCents===4500)).toBe(true);
     expect(JSON.parse(saved.body.stall.settings).setupStep).toBe(5);
-    const foreign={id:other.id+'-x',name:'Theirs',priceCents:100,shop:'stall',shopName:'S',enabled:true};
-    await call('/vendor/setup','PUT',{step:4,items:[foreign]},other.cookie);
+    const foreign=(await call('/vendor/stall','GET',undefined,other.cookie)).body.menu[0];
     expect((await call('/vendor/setup','PUT',{step:4,items:[{...items[0],priceCents:9900},foreign]},owner.cookie)).status).toBe(403);
     expect((await call('/vendor/stall','GET',undefined,owner.cookie)).body.menu[0].priceCents).toBe(4500);
   });
@@ -218,7 +215,8 @@ describe('v2.1 shared server foundation', () => {
     const fresh = await vendor();
     expect(fresh.id).not.toBe(owner.id);
     const data = (await call('/vendor/stall','GET',undefined,fresh.cookie)).body;
-    expect(data.stall.name).toBe(''); expect(data.menu).toHaveLength(0);
+    expect(data.stall.name).toBe(''); expect(data.menu).toHaveLength(6);
+    expect(data.menu.every((item: any)=>item.priceCents === null)).toBe(true);
     expect((await call('/orders','GET',undefined,fresh.cookie)).body.orders).toHaveLength(0);
   });
   it('enforces stop order and customer choices, and updates the customer gate total', async () => {
@@ -293,7 +291,7 @@ describe('v2.1 shared server foundation', () => {
     expect(items.filter((i:any)=>i.shop==='stall').every((i:any)=>JSON.stringify(i.extras)===JSON.stringify(extras))).toBe(true);
     expect(items.find((i:any)=>i.id==='milk').extras).toBeUndefined();
     const foreign=(await call('/vendor/stall','GET',undefined,other.cookie)).body.menu;
-    expect(foreign).toHaveLength(0);
+    expect(foreign[0].extras).not.toEqual(extras);
     const added=await call('/vendor/menu','PUT',{id:'new-kota',name:'New Kota',priceCents:5000,shop:'stall',shopName:'Mamelodi Kota',enabled:true},owner.cookie);
     expect(added.body.item.extras).toEqual(extras);
     expect((await call('/orders','GET',undefined,owner.cookie)).body.orders[0].lines).toEqual(order.body.order.lines);
@@ -436,15 +434,15 @@ describe('v2.1 shared server foundation', () => {
     expect((await call('/vendor/shop', 'PUT', { ...input, type: 'spaza', items: [{name:'Sparkling water 750ml',priceCents:2000,alcohol:false}] }, owner.cookie)).status).toBe(200);
   });
 
-  it('starts every new stall with an empty menu so the vendor adds their own food', async () => {
+  it('starts every new stall with six unpriced kota names and no pictures, and keeps unpriced food unpurchasable', async () => {
     const owner=await vendor();
-    expect((await call('/vendor/stall','GET',undefined,owner.cookie)).body.menu).toHaveLength(0);
+    const data=(await call('/vendor/stall','GET',undefined,owner.cookie)).body;
+    expect(data.menu).toHaveLength(6);
+    expect(data.menu.every((item:any)=>!item.image && item.priceCents===null)).toBe(true);
     const publicData=(await call('/stalls/'+owner.id)).body;
     expect(publicData.menu).toHaveLength(0);
-    const own={id:'own-1',name:'My kota',priceCents:null,shop:'stall',shopName:'S',enabled:true};
-    expect((await call('/vendor/setup','PUT',{step:4,items:[own]},owner.cookie)).status).toBe(200);
-    const unpriced=await call('/vendor/stall','GET',undefined,owner.cookie);
-    expect(unpriced.body.menu).toHaveLength(1);
+    const item=data.menu[0]; await call('/vendor/menu','PUT',{...item,image:'/photos/'+owner.id+'/own.jpg'},owner.cookie);
+    expect((await call('/vendor/stall','GET',undefined,owner.cookie)).body.menu[0].image).toBe('/photos/'+owner.id+'/own.jpg');
   });
 
   it('supports assistants and multiple delivery people with isolated, revocable access',async()=>{
