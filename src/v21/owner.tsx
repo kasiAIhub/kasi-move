@@ -38,7 +38,7 @@ function Login() {
     setRequestedAt(reply.requestedAt||0);setRequestLink(reply.requestLink||'');setSent(true);
     if(reply.popupBlocked&&reply.requestLink) window.location.assign(reply.requestLink);
   }
-  return <><h1>{sent?'Your WhatsApp code':'Your number'}</h1><p>{sent?'Thandi will reply to the number below with your code.':'Use the WhatsApp number you will use to manage your stall.'}</p>
+  return <><h1>{sent?'Your WhatsApp code':'Your number'}</h1><p>{sent?'Your login code arrives on WhatsApp. Thandi will reply to the number below. Open WhatsApp, tap Send on the message, then type the code here.':'Your login code arrives on WhatsApp, not by SMS. Enter the WhatsApp number you will use to manage your stall.'}</p>
     <form className="v-stack" onSubmit={event=>{event.preventDefault();void task.run(async()=>{
       if(!sent) return requestCode();
       const result=await api('/auth/verify','POST',{phone:number,code,referral_name:referralName});
