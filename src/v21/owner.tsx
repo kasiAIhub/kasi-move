@@ -204,6 +204,7 @@ export function KeepStall() {
   const completed=orders.data?.orders.filter(order=>order.state==='delivered')??[];
   return <Frame vendor><h1>Keep my stall</h1><p>Your plan, saved activity and sharing links.</p>
     <section className="v-card v-stack"><h2>{plan.active?'Your subscription is active':data.plan.paidThrough?'Monthly payment due':'Open my stall'}</h2>
+      <strong>R300 once. R150 a month. No commission.</strong>
       <p>{LAUNCH_PRICE}<br/>{MONTHLY_PRICE}</p><h3>What you get</h3><ul><li>Your digital food menu, ready to share by WhatsApp link or QR code.</li><li>Default menu artwork and tools to upload and polish your own food photos.</li><li>Online orders for collection, plus delivery with your own delivery person once they accept.</li><li>Your operating hours, menu prices and agreed delivery fees. You run your stall your way.</li><li>Zero commission on your food sales. Your orders and sales records in one place.</li></ul><p className="muted">Customers pay you on collection or delivery. You arrange your delivery person and card machine; payment providers may charge their own fees.</p>
       {plan.paidThrough&&<p>Paid through {new Date(plan.paidThrough).toLocaleDateString('en-ZA')}.</p>}
       <p>Pay by EFT or cash and send your receipt to Thandi. Your stall opens after she confirms payment.</p>{contact.bankDetails&&<p>{contact.bankDetails}</p>}{contact.cashSendNumber&&<p>Cash payment contact: {contact.cashSendNumber}</p>}
