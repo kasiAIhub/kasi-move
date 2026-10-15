@@ -289,6 +289,21 @@ describe('v2.1 shared server foundation', () => {
     expect(bySlug.status).toBe(200); expect(bySlug.body.id).toBe(a.id); expect(byId.body.slug).toBe('mama-ts-kota');
     expect((await call('/stalls/nope-nobody')).status).toBe(404);
   });
+  it('an accepted driver shows in the owner payload so the share text gets its driver line', async () => {
+    const owner = await vendor();
+    await call('/vendor/stall', 'PUT', { name: 'Tsholo Kota', town: 'Mamelodi', hours: '08:00–21:00', open: true, takesCard: true }, owner.cookie);
+    expect((await call('/vendor/setup', 'PUT', { step: 8, delivery: true }, owner.cookie)).status).toBe(200);
+    expect((await call('/vendor/rider', 'POST', { phone: '0791234567', riderName: 'Tsepo', feeCents: 1000 }, owner.cookie)).status).toBe(200);
+    const before = (await call('/vendor/stall', 'GET', undefined, owner.cookie)).body;
+    expect(before.stall.rider_phone).toBeNull();
+    const rider = await call('/auth/rider', 'POST', { token: inviteToken, decision: 'accept' });
+    expect(rider.status).toBe(200);
+    const after = (await call('/vendor/stall', 'GET', undefined, owner.cookie)).body;
+    expect(after.stall.rider_phone).toBe('+27791234567');
+    expect(JSON.parse(after.stall.settings).riderName).toBe('Tsepo');
+    expect(JSON.parse(after.stall.settings).deliveryEnabled).toBe(true);
+    expect(after.team.find((m: any) => m.role === 'rider' && m.phone === after.stall.rider_phone)?.name).toBe('Tsepo');
+  });
   it('hides unpriced/sold-out menu items and restores daily availability at South African midnight', async () => {
     const { owner } = await setup();
     await call('/vendor/menu', 'PUT', { id: 'blank', name: 'Chicken', priceCents: null, shop: 'stall', shopName: 'Mamelodi', enabled: true }, owner.cookie);
